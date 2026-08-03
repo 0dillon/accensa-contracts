@@ -4,7 +4,7 @@
   <p>
     <img src="https://img.shields.io/github/actions/workflow/status/accensa/accensa-contracts/ci.yml?branch=main" alt="CI Status" />
     <img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License" />
-    <img src="https://img.shields.io/badge/soroban--sdk-27.0.0-orange.svg" alt="soroban-sdk 27" />
+    <img src="https://img.shields.io/badge/soroban--sdk-27.0.4-orange.svg" alt="soroban-sdk 27" />
     <img src="https://img.shields.io/badge/testnet-deployed-success.svg" alt="Deployed on testnet" />
   </p>
   <p>
