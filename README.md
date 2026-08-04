@@ -164,7 +164,7 @@ refund-vault     14 passed
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md). Security policy in [SECURITY.md](SECURITY.md).
+See [CONTRIBUTING.md](CONTRIBUTING.md). Security policy in [SECURITY.md](SECURITY.md) and threat model in [docs/SECURITY_MODEL.md](docs/SECURITY_MODEL.md). For deployment errors, see [TROUBLESHOOTING.md](TROUBLESHOOTING.md).
 
 ## Contributors
 
