@@ -88,6 +88,8 @@ Holds merchant float and executes refunds bounded by an on-chain policy.
 | `withdraw(amount, to)` | Merchant withdraws float. |
 | `set_refund_window(ledgers)` | Updates the window; `0` disables expiry. |
 | `get_refund(payment_ref) -> Option<RefundRecord>` | Looks up a refund. |
+| `pause()` | Pauses operations for emergency stops. Merchant auth required. |
+| `unpause()` | Resumes paused operations. Merchant auth required. |
 
 Emits `Refunded` with topics `("refunded", payment_ref)`.
 
@@ -97,6 +99,7 @@ Enforced invariants, each covered by a test:
 - **Time-bounded** — refunds past `refund_window_ledgers` are rejected (`WindowExpired`).
 - **Float-bounded** — a refund can never exceed vault balance (`InsufficientFloat`).
 - **Merchant-only** — every state-changing call requires merchant auth (`Unauthorized`).
+- **Pausable** — operations are halted if the vault is paused (`Paused`).
 
 ## Live on Testnet
 

@@ -14,6 +14,7 @@ pub enum Error {
     WindowExpired = 5,
     InsufficientFloat = 6,
     InvalidAmount = 7,
+    Paused = 8,
 }
 
 #[contracttype]
@@ -22,6 +23,7 @@ pub enum DataKey {
     Token,
     RefundWindow,
     Refund(BytesN<32>),
+    IsPaused,
 }
 
 #[contracttype]
@@ -70,6 +72,15 @@ impl RefundVault {
     }
 
     pub fn deposit(env: Env, from: Address, amount: i128) -> Result<(), Error> {
+        if env
+            .storage()
+            .instance()
+            .get(&DataKey::IsPaused)
+            .unwrap_or(false)
+        {
+            return Err(Error::Paused);
+        }
+
         if amount <= 0 {
             return Err(Error::InvalidAmount);
         }
@@ -101,6 +112,15 @@ impl RefundVault {
         amount: i128,
         paid_at_ledger: u32,
     ) -> Result<(), Error> {
+        if env
+            .storage()
+            .instance()
+            .get(&DataKey::IsPaused)
+            .unwrap_or(false)
+        {
+            return Err(Error::Paused);
+        }
+
         if amount <= 0 {
             return Err(Error::InvalidAmount);
         }
@@ -168,6 +188,15 @@ impl RefundVault {
     }
 
     pub fn withdraw(env: Env, amount: i128, to: Address) -> Result<(), Error> {
+        if env
+            .storage()
+            .instance()
+            .get(&DataKey::IsPaused)
+            .unwrap_or(false)
+        {
+            return Err(Error::Paused);
+        }
+
         if amount <= 0 {
             return Err(Error::InvalidAmount);
         }
@@ -211,6 +240,32 @@ impl RefundVault {
         env.storage()
             .persistent()
             .get(&DataKey::Refund(payment_ref))
+    }
+
+    pub fn pause(env: Env) -> Result<(), Error> {
+        let merchant: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .ok_or(Error::NotInitialized)?;
+        merchant.require_auth();
+
+        env.storage().instance().set(&DataKey::IsPaused, &true);
+        env.storage().instance().extend_ttl(100, 100000);
+        Ok(())
+    }
+
+    pub fn unpause(env: Env) -> Result<(), Error> {
+        let merchant: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .ok_or(Error::NotInitialized)?;
+        merchant.require_auth();
+
+        env.storage().instance().set(&DataKey::IsPaused, &false);
+        env.storage().instance().extend_ttl(100, 100000);
+        Ok(())
     }
 }
 
