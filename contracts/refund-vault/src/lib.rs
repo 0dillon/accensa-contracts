@@ -13,6 +13,7 @@ pub enum Error {
     AlreadyRefunded = 4,
     WindowExpired = 5,
     InsufficientFloat = 6,
+    InvalidAmount = 7,
 }
 
 #[contracttype]
@@ -69,6 +70,10 @@ impl RefundVault {
     }
 
     pub fn deposit(env: Env, from: Address, amount: i128) -> Result<(), Error> {
+        if amount <= 0 {
+            return Err(Error::InvalidAmount);
+        }
+
         let merchant: Address = env
             .storage()
             .instance()
@@ -96,6 +101,10 @@ impl RefundVault {
         amount: i128,
         paid_at_ledger: u32,
     ) -> Result<(), Error> {
+        if amount <= 0 {
+            return Err(Error::InvalidAmount);
+        }
+
         let merchant: Address = env
             .storage()
             .instance()
@@ -159,6 +168,10 @@ impl RefundVault {
     }
 
     pub fn withdraw(env: Env, amount: i128, to: Address) -> Result<(), Error> {
+        if amount <= 0 {
+            return Err(Error::InvalidAmount);
+        }
+
         let merchant: Address = env
             .storage()
             .instance()
