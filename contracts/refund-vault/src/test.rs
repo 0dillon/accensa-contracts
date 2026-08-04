@@ -337,3 +337,44 @@ fn test_extend_refund_ttl_succeeds() {
     // This shouldn't fail since the refund exists.
     client.extend_refund_ttl(&payment_ref);
 }
+
+#[test]
+fn test_events_emitted() {
+    use soroban_sdk::testutils::Events;
+    let (env, client, merchant, _token) = setup(100);
+
+    client.deposit(&merchant, &500_000);
+    assert_eq!(
+        env.events()
+            .all()
+            .filter_by_contract(&client.address)
+            .events()
+            .len(),
+        1,
+        "deposit event missing"
+    );
+
+    let payment_ref = BytesN::from_array(&env, &[7u8; 32]);
+    let buyer = Address::generate(&env);
+    client.refund(&payment_ref, &buyer, &120_000, &0);
+    assert_eq!(
+        env.events()
+            .all()
+            .filter_by_contract(&client.address)
+            .events()
+            .len(),
+        1,
+        "refund event missing"
+    );
+
+    client.withdraw(&100_000, &merchant);
+    assert_eq!(
+        env.events()
+            .all()
+            .filter_by_contract(&client.address)
+            .events()
+            .len(),
+        1,
+        "withdraw event missing"
+    );
+}
