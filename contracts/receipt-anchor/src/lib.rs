@@ -45,6 +45,13 @@ pub struct Anchored {
     pub period_end: u64,
 }
 
+/// Approximately 30 days of ledgers, assuming ~5 seconds per ledger.
+/// 60 * 60 * 24 * 30 / 5 = 518,400.
+/// This ensures batches survive for long-term audit use before requiring a TTL bump or restoration.
+const TTL_EXTEND: u32 = 518_400;
+/// The threshold before TTL is actually bumped, to prevent spamming updates on every call.
+const TTL_THRESHOLD: u32 = 100;
+
 const MAX_BATCH_SIZE: u32 = 1000;
 
 #[contract]
@@ -58,7 +65,7 @@ impl ReceiptAnchor {
         }
         env.storage().instance().set(&DataKey::Admin, &merchant);
         env.storage().instance().set(&DataKey::BatchCount, &0u64);
-        env.storage().instance().extend_ttl(100, 100000);
+        env.storage().instance().extend_ttl(TTL_THRESHOLD, TTL_EXTEND);
         Ok(())
     }
 
@@ -97,10 +104,10 @@ impl ReceiptAnchor {
             .instance()
             .set(&DataKey::BatchCount, &batch_id);
 
-        env.storage().instance().extend_ttl(100, 100000);
+        env.storage().instance().extend_ttl(TTL_THRESHOLD, TTL_EXTEND);
         env.storage()
             .persistent()
-            .extend_ttl(&DataKey::Batch(batch_id), 100, 100000);
+            .extend_ttl(&DataKey::Batch(batch_id), TTL_THRESHOLD, TTL_EXTEND);
 
         Anchored {
             batch_id,
@@ -154,6 +161,16 @@ impl ReceiptAnchor {
             .instance()
             .get(&DataKey::BatchCount)
             .ok_or(Error::NotInitialized)
+    }
+
+    pub fn extend_batch_ttl(env: Env, batch_id: u64) -> Result<(), Error> {
+        if !env.storage().persistent().has(&DataKey::Batch(batch_id)) {
+            return Err(Error::BatchNotFound);
+        }
+        env.storage()
+            .persistent()
+            .extend_ttl(&DataKey::Batch(batch_id), TTL_THRESHOLD, TTL_EXTEND);
+        Ok(())
     }
 }
 
