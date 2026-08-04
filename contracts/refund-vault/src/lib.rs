@@ -76,7 +76,9 @@ impl RefundVault {
             .instance()
             .set(&DataKey::RefundWindow, &refund_window_ledgers);
 
-        env.storage().instance().extend_ttl(TTL_THRESHOLD, TTL_EXTEND);
+        env.storage()
+            .instance()
+            .extend_ttl(TTL_THRESHOLD, TTL_EXTEND);
         Ok(())
     }
 
@@ -107,9 +109,11 @@ impl RefundVault {
 
         let token: Address = env.storage().instance().get(&DataKey::Token).unwrap();
         let client = token::Client::new(&env, &token);
-        client.transfer(&from, &env.current_contract_address(), &amount);
+        client.transfer(&from, env.current_contract_address(), &amount);
 
-        env.storage().instance().extend_ttl(TTL_THRESHOLD, TTL_EXTEND);
+        env.storage()
+            .instance()
+            .extend_ttl(TTL_THRESHOLD, TTL_EXTEND);
         Ok(())
     }
 
@@ -179,10 +183,14 @@ impl RefundVault {
             .persistent()
             .set(&DataKey::Refund(payment_ref.clone()), &record);
 
-        env.storage().instance().extend_ttl(TTL_THRESHOLD, TTL_EXTEND);
         env.storage()
-            .persistent()
-            .extend_ttl(&DataKey::Refund(payment_ref.clone()), TTL_THRESHOLD, TTL_EXTEND);
+            .instance()
+            .extend_ttl(TTL_THRESHOLD, TTL_EXTEND);
+        env.storage().persistent().extend_ttl(
+            &DataKey::Refund(payment_ref.clone()),
+            TTL_THRESHOLD,
+            TTL_EXTEND,
+        );
 
         Refunded {
             payment_ref,
@@ -225,7 +233,9 @@ impl RefundVault {
 
         token_client.transfer(&env.current_contract_address(), &to, &amount);
 
-        env.storage().instance().extend_ttl(TTL_THRESHOLD, TTL_EXTEND);
+        env.storage()
+            .instance()
+            .extend_ttl(TTL_THRESHOLD, TTL_EXTEND);
         Ok(())
     }
 
@@ -241,7 +251,9 @@ impl RefundVault {
             .instance()
             .set(&DataKey::RefundWindow, &ledgers);
 
-        env.storage().instance().extend_ttl(TTL_THRESHOLD, TTL_EXTEND);
+        env.storage()
+            .instance()
+            .extend_ttl(TTL_THRESHOLD, TTL_EXTEND);
         Ok(())
     }
 
@@ -260,7 +272,9 @@ impl RefundVault {
         merchant.require_auth();
 
         env.storage().instance().set(&DataKey::IsPaused, &true);
-        env.storage().instance().extend_ttl(TTL_THRESHOLD, TTL_EXTEND);
+        env.storage()
+            .instance()
+            .extend_ttl(TTL_THRESHOLD, TTL_EXTEND);
         Ok(())
     }
 
@@ -273,17 +287,25 @@ impl RefundVault {
         merchant.require_auth();
 
         env.storage().instance().set(&DataKey::IsPaused, &false);
-        env.storage().instance().extend_ttl(TTL_THRESHOLD, TTL_EXTEND);
+        env.storage()
+            .instance()
+            .extend_ttl(TTL_THRESHOLD, TTL_EXTEND);
         Ok(())
     }
 
     pub fn extend_refund_ttl(env: Env, payment_ref: BytesN<32>) -> Result<(), Error> {
-        if !env.storage().persistent().has(&DataKey::Refund(payment_ref.clone())) {
+        if !env
+            .storage()
+            .persistent()
+            .has(&DataKey::Refund(payment_ref.clone()))
+        {
             return Err(Error::RefundNotFound);
         }
-        env.storage()
-            .persistent()
-            .extend_ttl(&DataKey::Refund(payment_ref), TTL_THRESHOLD, TTL_EXTEND);
+        env.storage().persistent().extend_ttl(
+            &DataKey::Refund(payment_ref),
+            TTL_THRESHOLD,
+            TTL_EXTEND,
+        );
         Ok(())
     }
 }

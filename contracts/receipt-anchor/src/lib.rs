@@ -65,7 +65,9 @@ impl ReceiptAnchor {
         }
         env.storage().instance().set(&DataKey::Admin, &merchant);
         env.storage().instance().set(&DataKey::BatchCount, &0u64);
-        env.storage().instance().extend_ttl(TTL_THRESHOLD, TTL_EXTEND);
+        env.storage()
+            .instance()
+            .extend_ttl(TTL_THRESHOLD, TTL_EXTEND);
         Ok(())
     }
 
@@ -104,7 +106,9 @@ impl ReceiptAnchor {
             .instance()
             .set(&DataKey::BatchCount, &batch_id);
 
-        env.storage().instance().extend_ttl(TTL_THRESHOLD, TTL_EXTEND);
+        env.storage()
+            .instance()
+            .extend_ttl(TTL_THRESHOLD, TTL_EXTEND);
         env.storage()
             .persistent()
             .extend_ttl(&DataKey::Batch(batch_id), TTL_THRESHOLD, TTL_EXTEND);
