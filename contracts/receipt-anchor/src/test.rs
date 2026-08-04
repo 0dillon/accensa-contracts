@@ -168,6 +168,39 @@ fn test_verify_receipt_missing_batch_fails() {
     );
 }
 
+#[test]
+fn test_get_batch_count_tracks_anchors() {
+    let (env, client, merchant) = setup();
+    client.initialize(&merchant);
+
+    assert_eq!(client.get_batch_count(), 0);
+
+    let root = BytesN::from_array(&env, &[1u8; 32]);
+    client.anchor_batch(&root, &5, &0, &50);
+    assert_eq!(client.get_batch_count(), 1);
+
+    client.anchor_batch(&root, &7, &51, &99);
+    assert_eq!(client.get_batch_count(), 2);
+}
+
+#[test]
+fn test_get_batch_count_before_initialize_fails() {
+    let (_env, client, _merchant) = setup();
+    assert_eq!(client.try_get_batch_count(), Err(Ok(Error::NotInitialized)));
+}
+
+#[test]
+fn test_anchor_batch_enforces_max_size() {
+    let (env, client, merchant) = setup();
+    client.initialize(&merchant);
+
+    let root = BytesN::from_array(&env, &[1u8; 32]);
+    assert_eq!(
+        client.try_anchor_batch(&root, &1001, &0, &50),
+        Err(Ok(Error::BatchTooLarge))
+    );
+}
+
 // ---------------------------------------------------------------------------
 // Cross-implementation conformance
 // ---------------------------------------------------------------------------

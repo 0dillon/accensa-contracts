@@ -11,6 +11,7 @@ pub enum Error {
     NotInitialized = 2,
     Unauthorized = 3,
     BatchNotFound = 4,
+    BatchTooLarge = 5,
 }
 
 #[contracttype]
@@ -44,6 +45,8 @@ pub struct Anchored {
     pub period_end: u64,
 }
 
+const MAX_BATCH_SIZE: u32 = 1000;
+
 #[contract]
 pub struct ReceiptAnchor;
 
@@ -66,6 +69,10 @@ impl ReceiptAnchor {
         period_start: u64,
         period_end: u64,
     ) -> Result<u64, Error> {
+        if count > MAX_BATCH_SIZE {
+            return Err(Error::BatchTooLarge);
+        }
+
         let merchant: Address = env
             .storage()
             .instance()
@@ -140,6 +147,13 @@ impl ReceiptAnchor {
         }
 
         Ok(computed_hash == batch.root.to_array())
+    }
+
+    pub fn get_batch_count(env: Env) -> Result<u64, Error> {
+        env.storage()
+            .instance()
+            .get(&DataKey::BatchCount)
+            .ok_or(Error::NotInitialized)
     }
 }
 
