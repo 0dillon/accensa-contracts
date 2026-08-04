@@ -264,3 +264,52 @@ fn test_withdraw_invalid_amount_fails() {
         Err(Ok(Error::InvalidAmount))
     );
 }
+
+#[test]
+fn test_pause_unpause() {
+    let (_env, client, _merchant, _token) = setup(100);
+    client.pause();
+    client.unpause();
+}
+
+#[test]
+fn test_deposit_when_paused_fails() {
+    let (_env, client, merchant, _token) = setup(100);
+    client.pause();
+    assert_eq!(client.try_deposit(&merchant, &100), Err(Ok(Error::Paused)));
+}
+
+#[test]
+fn test_refund_when_paused_fails() {
+    let (env, client, _merchant, _token) = setup(100);
+    client.pause();
+    let payment_ref = BytesN::from_array(&env, &[10u8; 32]);
+    let buyer = Address::generate(&env);
+    assert_eq!(
+        client.try_refund(&payment_ref, &buyer, &100, &0),
+        Err(Ok(Error::Paused))
+    );
+}
+
+#[test]
+fn test_withdraw_when_paused_fails() {
+    let (_env, client, merchant, _token) = setup(100);
+    client.pause();
+    assert_eq!(client.try_withdraw(&100, &merchant), Err(Ok(Error::Paused)));
+}
+
+#[test]
+#[should_panic]
+fn test_pause_requires_merchant_auth() {
+    let (env, client, _merchant, _token) = setup(100);
+    env.set_auths(&[]);
+    client.pause();
+}
+
+#[test]
+#[should_panic]
+fn test_unpause_requires_merchant_auth() {
+    let (env, client, _merchant, _token) = setup(100);
+    env.set_auths(&[]);
+    client.unpause();
+}
