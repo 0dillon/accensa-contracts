@@ -201,6 +201,28 @@ fn test_anchor_batch_enforces_max_size() {
     );
 }
 
+#[test]
+fn test_extend_batch_ttl_fails_if_missing() {
+    let (_env, client, merchant) = setup();
+    client.initialize(&merchant);
+    assert_eq!(
+        client.try_extend_batch_ttl(&99),
+        Err(Ok(Error::BatchNotFound))
+    );
+}
+
+#[test]
+fn test_extend_batch_ttl_succeeds() {
+    let (env, client, merchant) = setup();
+    client.initialize(&merchant);
+
+    let root = BytesN::from_array(&env, &[1u8; 32]);
+    let batch_id = client.anchor_batch(&root, &5, &0, &50);
+
+    // This won't fail since the batch exists. (TTL updates aren't observable from the contract API, but it shouldn't revert)
+    client.extend_batch_ttl(&batch_id);
+}
+
 // ---------------------------------------------------------------------------
 // Cross-implementation conformance
 // ---------------------------------------------------------------------------

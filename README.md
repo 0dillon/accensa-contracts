@@ -67,6 +67,7 @@ they were charged correctly, with no trusted API in the path.
 | `get_batch(batch_id) -> BatchRecord` | Reads an anchored batch. |
 | `get_batch_count() -> u64` | Returns the total number of anchored batches. Read-only. |
 | `verify_receipt(batch_id, leaf, proof) -> bool` | Verifies a receipt against the anchored root. Read-only, free to call. |
+| `extend_batch_ttl(batch_id)` | Extends the TTL of a batch to prevent archival. Publicly callable. |
 
 Emits `Anchored` with topics `("anchored", batch_id)`.
 
@@ -90,6 +91,7 @@ Holds merchant float and executes refunds bounded by an on-chain policy.
 | `get_refund(payment_ref) -> Option<RefundRecord>` | Looks up a refund. |
 | `pause()` | Pauses operations for emergency stops. Merchant auth required. |
 | `unpause()` | Resumes paused operations. Merchant auth required. |
+| `extend_refund_ttl(payment_ref)` | Extends the TTL of a refund record to prevent archival. Publicly callable. |
 
 Emits `Refunded` with topics `("refunded", payment_ref)`.
 
@@ -100,6 +102,14 @@ Enforced invariants, each covered by a test:
 - **Float-bounded** — a refund can never exceed vault balance (`InsufficientFloat`).
 - **Merchant-only** — every state-changing call requires merchant auth (`Unauthorized`).
 - **Pausable** — operations are halted if the vault is paused (`Paused`).
+
+## Storage Archival
+
+Soroban uses state archival to manage ledger bloat. The contracts are configured with a Time-To-Live (TTL) strategy that ensures active records remain in persistent storage for approximately 30 days (~518,400 ledgers) before they become eligible for archival.
+
+If a `BatchRecord` or `RefundRecord` is archived, it must be restored by submitting a restore transaction before it can be read again. Anyone can proactively prevent archival and reset the 30-day window by calling the public TTL extension functions:
+- `extend_batch_ttl(batch_id)` on `ReceiptAnchor`
+- `extend_refund_ttl(payment_ref)` on `RefundVault`
 
 ## Live on Testnet
 

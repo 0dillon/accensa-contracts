@@ -313,3 +313,27 @@ fn test_unpause_requires_merchant_auth() {
     env.set_auths(&[]);
     client.unpause();
 }
+
+#[test]
+fn test_extend_refund_ttl_fails_if_missing() {
+    let (env, client, merchant, _token) = setup(100);
+    client.deposit(&merchant, &500_000);
+    let payment_ref = BytesN::from_array(&env, &[99u8; 32]);
+    assert_eq!(
+        client.try_extend_refund_ttl(&payment_ref),
+        Err(Ok(Error::RefundNotFound))
+    );
+}
+
+#[test]
+fn test_extend_refund_ttl_succeeds() {
+    let (env, client, merchant, _token) = setup(100);
+    client.deposit(&merchant, &500_000);
+
+    let payment_ref = BytesN::from_array(&env, &[7u8; 32]);
+    let buyer = Address::generate(&env);
+    client.refund(&payment_ref, &buyer, &120_000, &0);
+
+    // This shouldn't fail since the refund exists.
+    client.extend_refund_ttl(&payment_ref);
+}
