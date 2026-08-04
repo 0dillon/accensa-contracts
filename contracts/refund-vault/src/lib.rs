@@ -41,12 +41,28 @@ pub struct RefundRecord {
 /// so indexers can decode it with the same shape stored under the payment ref.
 #[contractevent]
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct Refunded {
+pub struct RefundEvent {
     #[topic]
     pub payment_ref: BytesN<32>,
     pub amount: i128,
     pub recipient: Address,
     pub ledger: u32,
+}
+
+#[contractevent]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DepositEvent {
+    #[topic]
+    pub from: Address,
+    pub amount: i128,
+}
+
+#[contractevent]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct WithdrawEvent {
+    #[topic]
+    pub to: Address,
+    pub amount: i128,
 }
 
 /// Approximately 30 days of ledgers, assuming ~5 seconds per ledger.
@@ -110,6 +126,12 @@ impl RefundVault {
         let token: Address = env.storage().instance().get(&DataKey::Token).unwrap();
         let client = token::Client::new(&env, &token);
         client.transfer(&from, env.current_contract_address(), &amount);
+
+        DepositEvent {
+            from: from.clone(),
+            amount,
+        }
+        .publish(&env);
 
         env.storage()
             .instance()
@@ -192,7 +214,7 @@ impl RefundVault {
             TTL_EXTEND,
         );
 
-        Refunded {
+        RefundEvent {
             payment_ref,
             amount: record.amount,
             recipient: record.recipient,
@@ -232,6 +254,12 @@ impl RefundVault {
         }
 
         token_client.transfer(&env.current_contract_address(), &to, &amount);
+
+        WithdrawEvent {
+            to: to.clone(),
+            amount,
+        }
+        .publish(&env);
 
         env.storage()
             .instance()
