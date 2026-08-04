@@ -223,3 +223,44 @@ fn test_refund_requires_merchant_auth() {
     let buyer = Address::generate(&env);
     client.refund(&payment_ref, &buyer, &100, &0);
 }
+
+#[test]
+fn test_deposit_invalid_amount_fails() {
+    let (_env, client, merchant, _token) = setup(100);
+    assert_eq!(
+        client.try_deposit(&merchant, &0),
+        Err(Ok(Error::InvalidAmount))
+    );
+    assert_eq!(
+        client.try_deposit(&merchant, &-100),
+        Err(Ok(Error::InvalidAmount))
+    );
+}
+
+#[test]
+fn test_refund_invalid_amount_fails() {
+    let (env, client, _merchant, _token) = setup(100);
+    let payment_ref = BytesN::from_array(&env, &[9u8; 32]);
+    let buyer = Address::generate(&env);
+    assert_eq!(
+        client.try_refund(&payment_ref, &buyer, &0, &0),
+        Err(Ok(Error::InvalidAmount))
+    );
+    assert_eq!(
+        client.try_refund(&payment_ref, &buyer, &-100, &0),
+        Err(Ok(Error::InvalidAmount))
+    );
+}
+
+#[test]
+fn test_withdraw_invalid_amount_fails() {
+    let (_env, client, merchant, _token) = setup(100);
+    assert_eq!(
+        client.try_withdraw(&0, &merchant),
+        Err(Ok(Error::InvalidAmount))
+    );
+    assert_eq!(
+        client.try_withdraw(&-100, &merchant),
+        Err(Ok(Error::InvalidAmount))
+    );
+}
