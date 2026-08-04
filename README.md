@@ -63,8 +63,9 @@ they were charged correctly, with no trusted API in the path.
 | Function | Purpose |
 |---|---|
 | `initialize(merchant)` | Binds the contract to a merchant admin address. |
-| `anchor_batch(root, count, period_start, period_end) -> u64` | Anchors a batch root, returns its `batch_id`. Merchant auth required. |
+| `anchor_batch(root, count, period_start, period_end) -> u64` | Anchors a batch root, returns its `batch_id`. Merchant auth required. `count` must be $\le$ 1000 (`MAX_BATCH_SIZE`). |
 | `get_batch(batch_id) -> BatchRecord` | Reads an anchored batch. |
+| `get_batch_count() -> u64` | Returns the total number of anchored batches. Read-only. |
 | `verify_receipt(batch_id, leaf, proof) -> bool` | Verifies a receipt against the anchored root. Read-only, free to call. |
 
 Emits `Anchored` with topics `("anchored", batch_id)`.
