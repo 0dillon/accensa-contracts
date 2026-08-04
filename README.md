@@ -134,6 +134,8 @@ TOKEN=<usdc-sac-id> ./deploy.sh  # settle refunds in USDC instead of XLM
 
 Contract IDs are written to `deployments/<network>.env`.
 
+For mainnet deployment instructions and fee/rent analysis, see the [Mainnet Deployment Guide](docs/MAINNET_DEPLOYMENT.md).
+
 ## How the Pieces Fit
 
 ```
