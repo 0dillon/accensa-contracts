@@ -19,6 +19,7 @@ pub enum DataKey {
     Admin,
     BatchCount,
     Batch(u64),
+    PrunedUpTo,
 }
 
 #[contracttype]
@@ -28,6 +29,7 @@ pub struct BatchRecord {
     pub count: u32,
     pub period_start: u64,
     pub period_end: u64,
+    pub anchored_ledger: u32,
 }
 
 /// Emitted when a merchant anchors a batch of receipts.
@@ -36,13 +38,21 @@ pub struct BatchRecord {
 /// indexers can decode it with the same shape returned by `get_batch`.
 #[contractevent]
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct Anchored {
+pub struct AnchorEvent {
     #[topic]
     pub batch_id: u64,
     pub root: BytesN<32>,
     pub count: u32,
     pub period_start: u64,
     pub period_end: u64,
+}
+
+#[contractevent]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PruneEvent {
+    #[topic]
+    pub start_batch_id: u64,
+    pub end_batch_id: u64,
 }
 
 /// Approximately 30 days of ledgers, assuming ~5 seconds per ledger.
@@ -65,6 +75,7 @@ impl ReceiptAnchor {
         }
         env.storage().instance().set(&DataKey::Admin, &merchant);
         env.storage().instance().set(&DataKey::BatchCount, &0u64);
+        env.storage().instance().set(&DataKey::PrunedUpTo, &1u64);
         env.storage()
             .instance()
             .extend_ttl(TTL_THRESHOLD, TTL_EXTEND);
@@ -97,6 +108,7 @@ impl ReceiptAnchor {
             count,
             period_start,
             period_end,
+            anchored_ledger: env.ledger().sequence(),
         };
 
         env.storage()
@@ -113,7 +125,7 @@ impl ReceiptAnchor {
             .persistent()
             .extend_ttl(&DataKey::Batch(batch_id), TTL_THRESHOLD, TTL_EXTEND);
 
-        Anchored {
+        AnchorEvent {
             batch_id,
             root: record.root,
             count: record.count,
@@ -174,6 +186,49 @@ impl ReceiptAnchor {
         env.storage()
             .persistent()
             .extend_ttl(&DataKey::Batch(batch_id), TTL_THRESHOLD, TTL_EXTEND);
+        Ok(())
+    }
+
+    pub fn prune_batches(env: Env, before_ledger: u32) -> Result<(), Error> {
+        let merchant: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .ok_or(Error::NotInitialized)?;
+        merchant.require_auth();
+
+        let start_batch_id: u64 = env.storage().instance().get(&DataKey::PrunedUpTo).unwrap_or(1);
+        let batch_count: u64 = env.storage().instance().get(&DataKey::BatchCount).unwrap_or(0);
+        
+        let mut pruned_up_to = start_batch_id;
+
+        while pruned_up_to <= batch_count {
+            if let Some(record) = env.storage().persistent().get::<_, BatchRecord>(&DataKey::Batch(pruned_up_to)) {
+                if record.anchored_ledger < before_ledger {
+                    env.storage().persistent().remove(&DataKey::Batch(pruned_up_to));
+                    pruned_up_to += 1;
+                } else {
+                    break;
+                }
+            } else {
+                // If it's not present, it might have been manually deleted or we skipped it.
+                // We should just increment and continue.
+                pruned_up_to += 1;
+            }
+        }
+
+        if pruned_up_to > start_batch_id {
+            env.storage().instance().set(&DataKey::PrunedUpTo, &pruned_up_to);
+            PruneEvent {
+                start_batch_id,
+                end_batch_id: pruned_up_to,
+            }
+            .publish(&env);
+        }
+
+        env.storage()
+            .instance()
+            .extend_ttl(TTL_THRESHOLD, TTL_EXTEND);
         Ok(())
     }
 }
