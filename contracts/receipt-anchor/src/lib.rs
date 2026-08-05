@@ -197,15 +197,29 @@ impl ReceiptAnchor {
             .ok_or(Error::NotInitialized)?;
         merchant.require_auth();
 
-        let start_batch_id: u64 = env.storage().instance().get(&DataKey::PrunedUpTo).unwrap_or(1);
-        let batch_count: u64 = env.storage().instance().get(&DataKey::BatchCount).unwrap_or(0);
-        
+        let start_batch_id: u64 = env
+            .storage()
+            .instance()
+            .get(&DataKey::PrunedUpTo)
+            .unwrap_or(1);
+        let batch_count: u64 = env
+            .storage()
+            .instance()
+            .get(&DataKey::BatchCount)
+            .unwrap_or(0);
+
         let mut pruned_up_to = start_batch_id;
 
         while pruned_up_to <= batch_count {
-            if let Some(record) = env.storage().persistent().get::<_, BatchRecord>(&DataKey::Batch(pruned_up_to)) {
+            if let Some(record) = env
+                .storage()
+                .persistent()
+                .get::<_, BatchRecord>(&DataKey::Batch(pruned_up_to))
+            {
                 if record.anchored_ledger < before_ledger {
-                    env.storage().persistent().remove(&DataKey::Batch(pruned_up_to));
+                    env.storage()
+                        .persistent()
+                        .remove(&DataKey::Batch(pruned_up_to));
                     pruned_up_to += 1;
                 } else {
                     break;
@@ -218,7 +232,9 @@ impl ReceiptAnchor {
         }
 
         if pruned_up_to > start_batch_id {
-            env.storage().instance().set(&DataKey::PrunedUpTo, &pruned_up_to);
+            env.storage()
+                .instance()
+                .set(&DataKey::PrunedUpTo, &pruned_up_to);
             PruneEvent {
                 start_batch_id,
                 end_batch_id: pruned_up_to,

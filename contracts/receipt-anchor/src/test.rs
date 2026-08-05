@@ -1,7 +1,10 @@
 #![cfg(test)]
 
 use super::*;
-use soroban_sdk::{testutils::{Address as _, Ledger}, vec, Address, Bytes, Env};
+use soroban_sdk::{
+    testutils::{Address as _, Ledger},
+    vec, Address, Bytes, Env,
+};
 
 fn setup() -> (Env, ReceiptAnchorClient<'static>, Address) {
     let env = Env::default();
@@ -341,11 +344,27 @@ fn test_anchor_and_prune_events_emitted() {
     env.ledger().with_mut(|li| li.sequence_number = 100);
     let root = BytesN::from_array(&env, &[1u8; 32]);
     client.anchor_batch(&root, &10, &0, &10);
-    
-    assert_eq!(env.events().all().filter_by_contract(&client.address).events().len(), 1, "AnchorEvent missing");
+
+    assert_eq!(
+        env.events()
+            .all()
+            .filter_by_contract(&client.address)
+            .events()
+            .len(),
+        1,
+        "AnchorEvent missing"
+    );
 
     env.ledger().with_mut(|li| li.sequence_number = 200);
     client.prune_batches(&150);
-    
-    assert_eq!(env.events().all().filter_by_contract(&client.address).events().len(), 1, "PruneEvent missing");
+
+    assert_eq!(
+        env.events()
+            .all()
+            .filter_by_contract(&client.address)
+            .events()
+            .len(),
+        1,
+        "PruneEvent missing"
+    );
 }
