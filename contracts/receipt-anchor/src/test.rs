@@ -1,7 +1,7 @@
 #![cfg(test)]
 
 use super::*;
-use soroban_sdk::{testutils::Address as _, vec, Address, Bytes, Env};
+use soroban_sdk::{testutils::{Address as _, Ledger}, vec, Address, Bytes, Env};
 
 fn setup() -> (Env, ReceiptAnchorClient<'static>, Address) {
     let env = Env::default();
@@ -284,4 +284,68 @@ fn test_shared_vectors_include_live_testnet_batch() {
             0x2d, 0x90, 0xe6, 0xac,
         ]
     );
+}
+
+#[test]
+fn test_prune_batches_deletes_old_records() {
+    let (env, client, merchant) = setup();
+    client.initialize(&merchant);
+
+    env.ledger().with_mut(|li| li.sequence_number = 100);
+    let root1 = BytesN::from_array(&env, &[1u8; 32]);
+    let b1 = client.anchor_batch(&root1, &10, &0, &10);
+
+    env.ledger().with_mut(|li| li.sequence_number = 200);
+    let root2 = BytesN::from_array(&env, &[2u8; 32]);
+    let b2 = client.anchor_batch(&root2, &10, &11, &20);
+
+    env.ledger().with_mut(|li| li.sequence_number = 300);
+    let root3 = BytesN::from_array(&env, &[3u8; 32]);
+    let b3 = client.anchor_batch(&root3, &10, &21, &30);
+
+    // Prune before ledger 200 (should delete b1 only)
+    client.prune_batches(&200);
+
+    assert_eq!(client.try_get_batch(&b1), Err(Ok(Error::BatchNotFound)));
+    assert!(client.get_batch(&b2).period_end == 20);
+    assert!(client.get_batch(&b3).period_end == 30);
+
+    // Prune before ledger 400 (should delete b2 and b3)
+    client.prune_batches(&400);
+
+    assert_eq!(client.try_get_batch(&b2), Err(Ok(Error::BatchNotFound)));
+    assert_eq!(client.try_get_batch(&b3), Err(Ok(Error::BatchNotFound)));
+}
+
+#[test]
+#[should_panic]
+fn test_prune_batches_requires_admin_auth() {
+    let env = Env::default();
+    let contract_id = env.register(ReceiptAnchor, ());
+    let client = ReceiptAnchorClient::new(&env, &contract_id);
+    let merchant = Address::generate(&env);
+
+    env.mock_all_auths();
+    client.initialize(&merchant);
+
+    env.set_auths(&[]);
+    client.prune_batches(&100);
+}
+
+#[test]
+fn test_anchor_and_prune_events_emitted() {
+    use soroban_sdk::testutils::Events;
+    let (env, client, merchant) = setup();
+    client.initialize(&merchant);
+
+    env.ledger().with_mut(|li| li.sequence_number = 100);
+    let root = BytesN::from_array(&env, &[1u8; 32]);
+    client.anchor_batch(&root, &10, &0, &10);
+    
+    assert_eq!(env.events().all().filter_by_contract(&client.address).events().len(), 1, "AnchorEvent missing");
+
+    env.ledger().with_mut(|li| li.sequence_number = 200);
+    client.prune_batches(&150);
+    
+    assert_eq!(env.events().all().filter_by_contract(&client.address).events().len(), 1, "PruneEvent missing");
 }
