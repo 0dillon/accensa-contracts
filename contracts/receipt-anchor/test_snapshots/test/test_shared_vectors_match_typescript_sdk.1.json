@@ -446,6 +446,14 @@
                 "map": [
                   {
                     "key": {
+                      "symbol": "anchored_ledger"
+                    },
+                    "val": {
+                      "u32": 0
+                    }
+                  },
+                  {
+                    "key": {
                       "symbol": "count"
                     },
                     "val": {
@@ -504,6 +512,14 @@
               "durability": "persistent",
               "val": {
                 "map": [
+                  {
+                    "key": {
+                      "symbol": "anchored_ledger"
+                    },
+                    "val": {
+                      "u32": 0
+                    }
+                  },
                   {
                     "key": {
                       "symbol": "count"
@@ -566,6 +582,14 @@
                 "map": [
                   {
                     "key": {
+                      "symbol": "anchored_ledger"
+                    },
+                    "val": {
+                      "u32": 0
+                    }
+                  },
+                  {
+                    "key": {
                       "symbol": "count"
                     },
                     "val": {
@@ -624,6 +648,14 @@
               "durability": "persistent",
               "val": {
                 "map": [
+                  {
+                    "key": {
+                      "symbol": "anchored_ledger"
+                    },
+                    "val": {
+                      "u32": 0
+                    }
+                  },
                   {
                     "key": {
                       "symbol": "count"
@@ -686,6 +718,14 @@
                 "map": [
                   {
                     "key": {
+                      "symbol": "anchored_ledger"
+                    },
+                    "val": {
+                      "u32": 0
+                    }
+                  },
+                  {
+                    "key": {
                       "symbol": "count"
                     },
                     "val": {
@@ -744,6 +784,14 @@
               "durability": "persistent",
               "val": {
                 "map": [
+                  {
+                    "key": {
+                      "symbol": "anchored_ledger"
+                    },
+                    "val": {
+                      "u32": 0
+                    }
+                  },
                   {
                     "key": {
                       "symbol": "count"
@@ -806,6 +854,14 @@
                 "map": [
                   {
                     "key": {
+                      "symbol": "anchored_ledger"
+                    },
+                    "val": {
+                      "u32": 0
+                    }
+                  },
+                  {
+                    "key": {
                       "symbol": "count"
                     },
                     "val": {
@@ -864,6 +920,14 @@
               "durability": "persistent",
               "val": {
                 "map": [
+                  {
+                    "key": {
+                      "symbol": "anchored_ledger"
+                    },
+                    "val": {
+                      "u32": 0
+                    }
+                  },
                   {
                     "key": {
                       "symbol": "count"
@@ -926,6 +990,14 @@
                 "map": [
                   {
                     "key": {
+                      "symbol": "anchored_ledger"
+                    },
+                    "val": {
+                      "u32": 0
+                    }
+                  },
+                  {
+                    "key": {
                       "symbol": "count"
                     },
                     "val": {
@@ -984,6 +1056,14 @@
               "durability": "persistent",
               "val": {
                 "map": [
+                  {
+                    "key": {
+                      "symbol": "anchored_ledger"
+                    },
+                    "val": {
+                      "u32": 0
+                    }
+                  },
                   {
                     "key": {
                       "symbol": "count"
@@ -1046,6 +1126,14 @@
                 "map": [
                   {
                     "key": {
+                      "symbol": "anchored_ledger"
+                    },
+                    "val": {
+                      "u32": 0
+                    }
+                  },
+                  {
+                    "key": {
                       "symbol": "count"
                     },
                     "val": {
@@ -1104,6 +1192,14 @@
               "durability": "persistent",
               "val": {
                 "map": [
+                  {
+                    "key": {
+                      "symbol": "anchored_ledger"
+                    },
+                    "val": {
+                      "u32": 0
+                    }
+                  },
                   {
                     "key": {
                       "symbol": "count"
@@ -1166,6 +1262,14 @@
                 "map": [
                   {
                     "key": {
+                      "symbol": "anchored_ledger"
+                    },
+                    "val": {
+                      "u32": 0
+                    }
+                  },
+                  {
+                    "key": {
                       "symbol": "count"
                     },
                     "val": {
@@ -1224,6 +1328,14 @@
               "durability": "persistent",
               "val": {
                 "map": [
+                  {
+                    "key": {
+                      "symbol": "anchored_ledger"
+                    },
+                    "val": {
+                      "u32": 0
+                    }
+                  },
                   {
                     "key": {
                       "symbol": "count"
@@ -1301,6 +1413,18 @@
                       },
                       "val": {
                         "u64": "14"
+                      }
+                    },
+                    {
+                      "key": {
+                        "vec": [
+                          {
+                            "symbol": "PrunedUpTo"
+                          }
+                        ]
+                      },
+                      "val": {
+                        "u64": "1"
                       }
                     }
                   ]
