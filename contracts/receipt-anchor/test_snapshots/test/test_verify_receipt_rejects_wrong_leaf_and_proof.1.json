@@ -70,6 +70,14 @@
                 "map": [
                   {
                     "key": {
+                      "symbol": "anchored_ledger"
+                    },
+                    "val": {
+                      "u32": 0
+                    }
+                  },
+                  {
+                    "key": {
                       "symbol": "count"
                     },
                     "val": {
@@ -140,6 +148,18 @@
                         "vec": [
                           {
                             "symbol": "BatchCount"
+                          }
+                        ]
+                      },
+                      "val": {
+                        "u64": "1"
+                      }
+                    },
+                    {
+                      "key": {
+                        "vec": [
+                          {
+                            "symbol": "PrunedUpTo"
                           }
                         ]
                       },

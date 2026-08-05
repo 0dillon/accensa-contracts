@@ -96,6 +96,14 @@
                 "map": [
                   {
                     "key": {
+                      "symbol": "anchored_ledger"
+                    },
+                    "val": {
+                      "u32": 0
+                    }
+                  },
+                  {
+                    "key": {
                       "symbol": "count"
                     },
                     "val": {
@@ -154,6 +162,14 @@
               "durability": "persistent",
               "val": {
                 "map": [
+                  {
+                    "key": {
+                      "symbol": "anchored_ledger"
+                    },
+                    "val": {
+                      "u32": 0
+                    }
+                  },
                   {
                     "key": {
                       "symbol": "count"
@@ -232,6 +248,18 @@
                       "val": {
                         "u64": "2"
                       }
+                    },
+                    {
+                      "key": {
+                        "vec": [
+                          {
+                            "symbol": "PrunedUpTo"
+                          }
+                        ]
+                      },
+                      "val": {
+                        "u64": "1"
+                      }
                     }
                   ]
                 }
@@ -308,7 +336,7 @@
           "v0": {
             "topics": [
               {
-                "symbol": "anchored"
+                "symbol": "anchor_event"
               },
               {
                 "u64": "2"
