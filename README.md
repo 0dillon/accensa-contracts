@@ -68,8 +68,21 @@ they were charged correctly, with no trusted API in the path.
 | `get_batch_count() -> u64` | Returns the total number of anchored batches. Read-only. |
 | `verify_receipt(batch_id, leaf, proof) -> bool` | Verifies a receipt against the anchored root. Read-only, free to call. |
 | `extend_batch_ttl(batch_id)` | Extends the TTL of a batch to prevent archival. Publicly callable. |
+| `prune_batches(before_ledger)` | Deletes anchored batches older than `before_ledger` to reclaim rent. Merchant auth required. |
 
-Emits `Anchored` with topics `("anchored", batch_id)`.
+Pruning walks forward from an internal `PrunedUpTo` cursor and stops at the first batch
+that is not old enough, so the deleted range always stays a contiguous prefix — a batch
+is never removed from the middle while older ones remain readable.
+
+Emits:
+
+| Event | Topics | Data |
+|---|---|---|
+| `AnchorEvent` | `("anchor_event", batch_id)` | `root`, `count`, `period_start`, `period_end` |
+| `PruneEvent` | `("prune_event", start_batch_id)` | `end_batch_id` |
+
+The `AnchorEvent` data map mirrors `BatchRecord`, so an indexer decodes it with the same
+shape `get_batch` returns.
 
 Proofs use **sorted-pair SHA-256**: siblings are concatenated smaller-hash-first, so
 proofs carry no left/right position flags. The TypeScript SDK in
@@ -93,7 +106,16 @@ Holds merchant float and executes refunds bounded by an on-chain policy.
 | `unpause()` | Resumes paused operations. Merchant auth required. |
 | `extend_refund_ttl(payment_ref)` | Extends the TTL of a refund record to prevent archival. Publicly callable. |
 
-Emits `Refunded` with topics `("refunded", payment_ref)`.
+Emits:
+
+| Event | Topics | Data |
+|---|---|---|
+| `DepositEvent` | `("deposit_event", from)` | `amount` |
+| `RefundEvent` | `("refund_event", payment_ref)` | `amount`, `recipient`, `ledger` |
+| `WithdrawEvent` | `("withdraw_event", to)` | `amount` |
+
+The `RefundEvent` data map mirrors `RefundRecord`, so an indexer decodes it with the
+same shape stored under the payment ref.
 
 Enforced invariants, each covered by a test:
 
@@ -170,12 +192,12 @@ The dashboard, indexer, and SDK that drive these contracts live in
 
 ## Testing
 
-25 unit tests run against the Soroban test environment on every push, alongside
+48 unit tests run against the Soroban test environment on every push, alongside
 `cargo fmt --check` and `cargo clippy -D warnings`. CI does not swallow failures.
 
 ```
-receipt-anchor   11 passed
-refund-vault     14 passed
+receipt-anchor   22 passed
+refund-vault     26 passed
 ```
 
 ## Contributing
