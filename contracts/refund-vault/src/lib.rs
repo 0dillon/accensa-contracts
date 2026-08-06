@@ -16,6 +16,8 @@ pub enum Error {
     InvalidAmount = 7,
     Paused = 8,
     RefundNotFound = 9,
+    MetadataTooLong = 10,
+    AmountExceedsMax = 11,
 }
 
 #[contracttype]
@@ -25,6 +27,10 @@ pub enum DataKey {
     RefundWindow,
     Refund(BytesN<32>),
     IsPaused,
+    Metadata,
+    RefundMax,
+    Admins,
+    Threshold,
 }
 
 #[contracttype]
@@ -338,4 +344,5 @@ impl RefundVault {
     }
 }
 
+mod fuzz_test;
 mod test;

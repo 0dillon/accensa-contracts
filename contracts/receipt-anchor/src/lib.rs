@@ -249,4 +249,5 @@ impl ReceiptAnchor {
     }
 }
 
+mod fuzz_test;
 mod test;
