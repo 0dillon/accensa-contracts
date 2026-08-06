@@ -305,11 +305,7 @@ impl RefundVault {
             .ok_or(Error::NotInitialized)?;
         merchant.require_auth();
 
-        env.storage().instance().set(&DataKey::IsPaused,
-    Metadata,
-    RefundMax,
-    Admins,
-    Threshold, &true);
+        env.storage().instance().set(&DataKey::IsPaused, &true);
         env.storage()
             .instance()
             .extend_ttl(TTL_THRESHOLD, TTL_EXTEND);
@@ -324,11 +320,7 @@ impl RefundVault {
             .ok_or(Error::NotInitialized)?;
         merchant.require_auth();
 
-        env.storage().instance().set(&DataKey::IsPaused,
-    Metadata,
-    RefundMax,
-    Admins,
-    Threshold, &false);
+        env.storage().instance().set(&DataKey::IsPaused, &false);
         env.storage()
             .instance()
             .extend_ttl(TTL_THRESHOLD, TTL_EXTEND);
