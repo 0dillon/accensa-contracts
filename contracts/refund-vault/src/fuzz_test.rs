@@ -1,10 +1,10 @@
 #![cfg(test)]
 
-use crate::{DataKey, Error, RefundVault, RefundVaultClient};
+use crate::{Error, RefundVault, RefundVaultClient};
 use proptest::prelude::*;
 use soroban_sdk::{
     testutils::{Address as _, Ledger},
-    token::{StellarAssetClient, TokenClient},
+    token::StellarAssetClient,
     Address, BytesN, Env,
 };
 
@@ -30,7 +30,7 @@ fn setup(window: u32) -> (Env, RefundVaultClient<'static>, Address, Address) {
 proptest! {
     #[test]
     fn test_fuzz_deposit_extreme_amounts(amount in proptest::num::i128::ANY) {
-        let (env, client, merchant, _) = setup(100);
+        let (_, client, merchant, _) = setup(100);
         let res = client.try_deposit(&merchant, &amount);
         if amount <= 0 {
             assert_eq!(res, Err(Ok(Error::InvalidAmount)));
@@ -44,7 +44,7 @@ proptest! {
 
     #[test]
     fn test_fuzz_ttl_extension(ledger in 1u32..1000000u32) {
-        let (env, client, merchant, token) = setup(100);
+        let (env, client, _, _) = setup(100);
         env.ledger().set_sequence_number(ledger);
 
         let payment_ref = BytesN::from_array(&env, &[0; 32]);
