@@ -117,6 +117,10 @@ Emits:
 The `RefundEvent` data map mirrors `RefundRecord`, so an indexer decodes it with the
 same shape stored under the payment ref.
 
+**Cross-Contract Joins**:
+- **`payment_ref` ↔ receipt-leaf**: The `payment_ref` used to key refunds is identical to the `leaf` hash of the payment receipt anchored in `ReceiptAnchor`. This 1:1 mapping guarantees that the on-chain refund explicitly corresponds to the exact payment record provided to the agent.
+- **Refunds outlive pruned batches**: Archiving or pruning a batch in `ReceiptAnchor` has no effect on the `RefundVault`. A payment can be successfully refunded even if its original anchor batch has been pruned, provided it still falls within the refund window.
+
 Enforced invariants, each covered by a test:
 
 - **No double refunds** — a `payment_ref` can only be refunded once (`AlreadyRefunded`).
@@ -194,6 +198,7 @@ The dashboard, indexer, and SDK that drive these contracts live in
 
 Tests run against the Soroban test environment on every push, alongside
 `cargo fmt --check` and `cargo clippy -D warnings`. CI does not swallow failures.
+
 
 ## Contributing
 
