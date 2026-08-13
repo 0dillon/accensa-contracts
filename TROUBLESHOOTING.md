@@ -44,3 +44,19 @@ The transaction is missing a required signature, or the signature provided does 
 **Solution:**
 - Verify that the `--source` identity you are using in the CLI matches the account expected by the contract.
 - If you are trying to call an admin-only function (like `deposit` or `set_refund_window`), ensure you are signing with the correct merchant identity.
+
+### 4. `HostError` during Refund or Withdraw
+
+**Symptom:**
+```text
+error: transaction failed: HostError
+```
+*(or similar unhandled errors when calling `refund` or `withdraw`)*
+
+**Cause:**
+The recipient address (in a `refund`) or the destination address (in a `withdraw`) does not have a trustline established for the configured Stellar Asset Contract token (e.g., USDC). The underlying token contract panics and reverts the transaction when attempting to transfer to an account without a trustline.
+
+**Solution:**
+- Ensure that the recipient account has a valid trustline for the asset configured in the vault.
+- For merchants calling `withdraw`, verify that the destination wallet has established the required trustline before initiating the withdrawal.
+- `RefundVault` intentionally bubbles up this token-level panic rather than pre-checking trustlines, as a pre-check would consume extra computation budget on every successful refund.
