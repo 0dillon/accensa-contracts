@@ -391,3 +391,19 @@ fn test_events_emitted() {
         ]
     );
 }
+
+#[test]
+#[should_panic(expected = "HostError")]
+fn test_refund_without_trustline() {
+    let (env, client, merchant, token) = setup(100);
+    client.deposit(&merchant, &500_000);
+
+    let payment_ref = BytesN::from_array(&env, &[11u8; 32]);
+    let stranger = Address::from_string(&soroban_sdk::String::from_str(
+        &env,
+        "GBJCHUKZMTFJWQYW2HX4XAZ2ZV7UYWV6X4XAZ2ZV7UYWV6X4XAZ2ZV7U",
+    ));
+
+    // stranger has no trustline.
+    client.refund(&payment_ref, &stranger, &120_000, &0);
+}
