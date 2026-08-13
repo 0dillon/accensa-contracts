@@ -395,7 +395,7 @@ fn test_events_emitted() {
 #[test]
 #[should_panic(expected = "HostError")]
 fn test_refund_without_trustline() {
-    let (env, client, merchant, token) = setup(100);
+    let (env, client, merchant, _token) = setup(100);
     client.deposit(&merchant, &500_000);
 
     let payment_ref = BytesN::from_array(&env, &[11u8; 32]);
