@@ -9,7 +9,7 @@
   </p>
   <p>
     <a href="DEPLOYMENTS.md"><strong>Live on Testnet</strong></a> ·
-    <a href="https://accensa-docs.vercel.app"><strong>Documentation</strong></a> ·
+    <a href="https://accensa.github.io/accensa-app/docs/contracts/overview"><strong>Documentation</strong></a> ·
     <a href="https://accensa-dashboard.vercel.app"><strong>Dashboard</strong></a> ·
     <a href="https://github.com/accensa/accensa-app"><strong>accensa-app</strong></a>
   </p>
