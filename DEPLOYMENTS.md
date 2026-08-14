@@ -11,6 +11,23 @@ and are produced by [`deploy.sh`](deploy.sh).
 
 Deployed 2026-07-22 with `soroban-sdk` 27.0.0, built for `wasm32v1-none`.
 
+> [!IMPORTANT]
+> **These addresses run `0.1.0`. `main` is at `0.2.0`.**
+>
+> Soroban deployment mints a new contract ID, so redeploying would invalidate every
+> published address — including the ones the public verifier at
+> <https://accensa-dashboard.vercel.app/verify> reads live. `0.2.0` is therefore a
+> source release and these contracts were deliberately left in place.
+>
+> What that means in practice: `prune_batches`, `get_batch_count`,
+> `extend_batch_ttl`, `pause`, `unpause` and `extend_refund_ttl` **do not exist at
+> these addresses**, and the events they emit here are still `0.1.0`'s
+> `("anchored", batch_id)` and `("refunded", payment_ref)` rather than the
+> `anchor_event` / `refund_event` topics documented in
+> [`docs/EVENTS.md`](docs/EVENTS.md). An indexer pointed at these addresses must
+> use the old topics. See [`CHANGELOG.md`](CHANGELOG.md) and
+> [#59](https://github.com/accensa/accensa-contracts/issues/59).
+
 | Contract | Contract ID | Explorer |
 |---|---|---|
 | `ReceiptAnchor` | `CBHRJU7CF4XIFRNDITFHNQHABKBMFM2FYFHLGWN3JGSFYYCDSMDAWPRV` | [stellar.expert](https://stellar.expert/explorer/testnet/contract/CBHRJU7CF4XIFRNDITFHNQHABKBMFM2FYFHLGWN3JGSFYYCDSMDAWPRV) |

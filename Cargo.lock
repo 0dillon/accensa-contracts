@@ -1257,7 +1257,7 @@ dependencies = [
 
 [[package]]
 name = "receipt-anchor"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "proptest",
  "soroban-sdk",
@@ -1285,7 +1285,7 @@ dependencies = [
 
 [[package]]
 name = "refund-vault"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "proptest",
  "receipt-anchor",
