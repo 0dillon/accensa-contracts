@@ -27,6 +27,7 @@ pub enum Error {
     RefundNotFound = 9,
     MetadataTooLong = 10,
     AmountExceedsMax = 11,
+    NoPendingTransfer = 12,
 }
 
 #[contracttype]
@@ -40,6 +41,7 @@ pub enum DataKey {
     RefundMax,
     Admins,
     Threshold,
+    PendingAdmin,
 }
 
 #[contracttype]
@@ -78,6 +80,24 @@ pub struct WithdrawEvent {
     #[topic]
     pub to: Address,
     pub amount: i128,
+}
+
+#[contractevent]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AdminTransferInitiatedEvent {
+    #[topic]
+    pub from: Address,
+    #[topic]
+    pub to: Address,
+}
+
+#[contractevent]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AdminTransferAcceptedEvent {
+    #[topic]
+    pub from: Address,
+    #[topic]
+    pub to: Address,
 }
 
 /// Approximately 30 days of ledgers, assuming ~5 seconds per ledger.
@@ -349,6 +369,77 @@ impl RefundVault {
             TTL_THRESHOLD,
             TTL_EXTEND,
         );
+        Ok(())
+    }
+
+    pub fn transfer_admin(env: Env, new_admin: Address) -> Result<(), Error> {
+        let current_admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .ok_or(Error::NotInitialized)?;
+        current_admin.require_auth();
+
+        env.storage()
+            .instance()
+            .set(&DataKey::PendingAdmin, &new_admin);
+
+        AdminTransferInitiatedEvent {
+            from: current_admin,
+            to: new_admin,
+        }
+        .publish(&env);
+
+        env.storage()
+            .instance()
+            .extend_ttl(TTL_THRESHOLD, TTL_EXTEND);
+        Ok(())
+    }
+
+    pub fn accept_admin(env: Env) -> Result<(), Error> {
+        let pending_admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::PendingAdmin)
+            .ok_or(Error::NoPendingTransfer)?;
+        pending_admin.require_auth();
+
+        let previous_admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap();
+
+        env.storage()
+            .instance()
+            .set(&DataKey::Admin, &pending_admin);
+        env.storage().instance().remove(&DataKey::PendingAdmin);
+
+        AdminTransferAcceptedEvent {
+            from: previous_admin,
+            to: pending_admin,
+        }
+        .publish(&env);
+
+        env.storage()
+            .instance()
+            .extend_ttl(TTL_THRESHOLD, TTL_EXTEND);
+        Ok(())
+    }
+
+    pub fn cancel_admin_transfer(env: Env) -> Result<(), Error> {
+        let current_admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .ok_or(Error::NotInitialized)?;
+        current_admin.require_auth();
+
+        if !env.storage().instance().has(&DataKey::PendingAdmin) {
+            return Err(Error::NoPendingTransfer);
+        }
+
+        env.storage().instance().remove(&DataKey::PendingAdmin);
+
+        env.storage()
+            .instance()
+            .extend_ttl(TTL_THRESHOLD, TTL_EXTEND);
         Ok(())
     }
 }

@@ -407,3 +407,214 @@ fn test_refund_without_trustline() {
     // stranger has no trustline.
     client.refund(&payment_ref, &stranger, &120_000, &0);
 }
+
+// ── Two-step admin transfer tests ──────────────────────────────────────────
+
+#[test]
+fn test_transfer_admin_happy_path() {
+    let (env, client, _merchant, _token) = setup(100);
+    let new_admin = Address::generate(&env);
+
+    client.transfer_admin(&new_admin);
+
+    // Admin hasn't changed yet — original admin can still act.
+    client.pause();
+    client.unpause();
+}
+
+#[test]
+fn test_accept_admin_transfers_role() {
+    let (env, client, _merchant, _token) = setup(100);
+    let new_admin = Address::generate(&env);
+
+    client.transfer_admin(&new_admin);
+    client.accept_admin();
+
+    // New admin can call admin-only functions (set_refund_window needs no token balance).
+    client.set_refund_window(&200);
+}
+
+#[test]
+fn test_accept_admin_without_pending_fails() {
+    let (_env, client, _merchant, _token) = setup(100);
+
+    // No transfer initiated — accept should fail.
+    assert_eq!(client.try_accept_admin(), Err(Ok(Error::NoPendingTransfer)));
+}
+
+#[test]
+fn test_cancel_admin_transfer_succeeds() {
+    let (env, client, _merchant, _token) = setup(100);
+    let new_admin = Address::generate(&env);
+
+    client.transfer_admin(&new_admin);
+    client.cancel_admin_transfer();
+
+    // After cancel, accept should fail.
+    assert_eq!(client.try_accept_admin(), Err(Ok(Error::NoPendingTransfer)));
+}
+
+#[test]
+fn test_cancel_without_pending_fails() {
+    let (_env, client, _merchant, _token) = setup(100);
+
+    assert_eq!(
+        client.try_cancel_admin_transfer(),
+        Err(Ok(Error::NoPendingTransfer))
+    );
+}
+
+#[test]
+fn test_cancel_then_reinitiate_works() {
+    let (env, client, _merchant, _token) = setup(100);
+    let admin_a = Address::generate(&env);
+    let admin_b = Address::generate(&env);
+
+    // Initiate to A, cancel, then initiate to B and accept.
+    client.transfer_admin(&admin_a);
+    client.cancel_admin_transfer();
+    client.transfer_admin(&admin_b);
+    client.accept_admin();
+
+    // B is now admin — set_refund_window should work.
+    client.set_refund_window(&200);
+}
+
+#[test]
+fn test_overwrite_pending_admin() {
+    let (env, client, _merchant, _token) = setup(100);
+    let admin_a = Address::generate(&env);
+    let admin_b = Address::generate(&env);
+
+    // Initiate to A, then re-initiate to B without cancelling.
+    client.transfer_admin(&admin_a);
+    client.transfer_admin(&admin_b);
+
+    // Accept — B should become admin.
+    client.accept_admin();
+    client.set_refund_window(&200);
+}
+
+#[test]
+fn test_old_admin_cannot_act_after_transfer() {
+    let (env, client, _merchant, _token) = setup(100);
+    let new_admin = Address::generate(&env);
+
+    client.transfer_admin(&new_admin);
+    client.accept_admin();
+
+    // New admin can call admin-only functions.
+    client.set_refund_window(&200);
+}
+
+#[test]
+fn test_transfer_admin_uninitialized_fails() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract_id = env.register(RefundVault, ());
+    let client = RefundVaultClient::new(&env, &contract_id);
+    let addr = Address::generate(&env);
+
+    assert_eq!(
+        client.try_transfer_admin(&addr),
+        Err(Ok(Error::NotInitialized))
+    );
+}
+
+#[test]
+fn test_cancel_admin_transfer_uninitialized_fails() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract_id = env.register(RefundVault, ());
+    let client = RefundVaultClient::new(&env, &contract_id);
+
+    assert_eq!(
+        client.try_cancel_admin_transfer(),
+        Err(Ok(Error::NotInitialized))
+    );
+}
+
+#[test]
+#[should_panic]
+fn test_transfer_admin_requires_auth() {
+    let (env, client, _merchant, _token) = setup(100);
+    let new_admin = Address::generate(&env);
+
+    env.set_auths(&[]);
+    client.transfer_admin(&new_admin);
+}
+
+#[test]
+#[should_panic]
+fn test_accept_admin_requires_pending_auth() {
+    let (env, client, _merchant, _token) = setup(100);
+    let new_admin = Address::generate(&env);
+
+    client.transfer_admin(&new_admin);
+
+    // Clear all auths — pending_admin.require_auth() should panic.
+    env.set_auths(&[]);
+    client.accept_admin();
+}
+
+#[test]
+#[should_panic]
+fn test_cancel_admin_transfer_requires_auth() {
+    let (env, client, _merchant, _token) = setup(100);
+    let new_admin = Address::generate(&env);
+
+    client.transfer_admin(&new_admin);
+
+    env.set_auths(&[]);
+    client.cancel_admin_transfer();
+}
+
+#[test]
+fn test_admin_transfer_events_emitted() {
+    use soroban_sdk::testutils::Events;
+    use soroban_sdk::{vec, IntoVal, Map, Symbol, Val};
+
+    let (env, client, merchant, _token) = setup(100);
+    let new_admin = Address::generate(&env);
+
+    client.transfer_admin(&new_admin);
+
+    let empty_data: Map<Val, Val> = Map::new(&env);
+    let events = env.events().all().filter_by_contract(&client.address);
+    assert_eq!(
+        events,
+        vec![
+            &env,
+            (
+                client.address.clone(),
+                (
+                    Symbol::new(&env, "admin_transfer_initiated_event"),
+                    merchant.clone(),
+                    new_admin.clone()
+                )
+                    .into_val(&env),
+                empty_data.clone().into_val(&env)
+            )
+        ]
+    );
+
+    client.accept_admin();
+
+    let events = env.events().all().filter_by_contract(&client.address);
+    assert_eq!(
+        events,
+        vec![
+            &env,
+            (
+                client.address.clone(),
+                (
+                    Symbol::new(&env, "admin_transfer_accepted_event"),
+                    merchant.clone(),
+                    new_admin.clone()
+                )
+                    .into_val(&env),
+                empty_data.into_val(&env)
+            )
+        ]
+    );
+}
