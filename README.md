@@ -196,6 +196,9 @@ For mainnet deployment instructions and fee/rent analysis, see the [Mainnet Depl
    agent ──verify_receipt(leaf, proof)──▶  true / false
 ```
 
+For a full visual walkthrough including the refund flow and cross-contract
+relationship, see the [Architecture Guide](docs/ARCHITECTURE.md).
+
 The dashboard, indexer, and SDK that drive these contracts live in
 [`accensa-app`](https://github.com/accensa/accensa-app).
 
