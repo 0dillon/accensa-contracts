@@ -345,8 +345,9 @@ fn test_shard_created_event_emitted_once_per_shard() {
         .len();
     assert_eq!(after_first, 2, "expected ShardCreatedEvent + AnchorEvent");
 
-    // A second anchor into the same shard must not create another one: only
-    // one more event (AnchorEvent) should appear, not two.
+    // `events().all()` only reflects the most recent top-level invocation, so
+    // a second anchor into the same shard should show just its own
+    // AnchorEvent (1), not a repeated ShardCreatedEvent.
     client.anchor_batch(&root, &1, &0, &1);
     let after_second = env
         .events()
@@ -354,7 +355,7 @@ fn test_shard_created_event_emitted_once_per_shard() {
         .filter_by_contract(&client.address)
         .events()
         .len();
-    assert_eq!(after_second, 3);
+    assert_eq!(after_second, 1);
 }
 
 // ---------------------------------------------------------------------------
@@ -530,6 +531,15 @@ fn test_anchor_and_prune_events_emitted() {
     let anchor_events = env.events().all();
     let batch = client.get_batch(&1);
     let shard0 = client.get_shard_address(&0);
+    let shard_created_data: soroban_sdk::Map<Symbol, soroban_sdk::Val> = soroban_sdk::map![
+        &env,
+        (Symbol::new(&env, "shard_address"), shard0.into_val(&env)),
+        (Symbol::new(&env, "start_batch_id"), 1u64.into_val(&env)),
+        (
+            Symbol::new(&env, "end_batch_id"),
+            (SHARD_CAPACITY + 1).into_val(&env)
+        ),
+    ];
     assert_eq!(
         anchor_events,
         vec![
@@ -537,16 +547,7 @@ fn test_anchor_and_prune_events_emitted() {
             (
                 client.address.clone(),
                 (Symbol::new(&env, "shard_created_event"), 0u64).into_val(&env),
-                soroban_sdk::map![
-                    &env,
-                    (Symbol::new(&env, "shard_address"), shard0.into_val(&env)),
-                    (Symbol::new(&env, "start_batch_id"), 1u64.into_val(&env)),
-                    (
-                        Symbol::new(&env, "end_batch_id"),
-                        (SHARD_CAPACITY + 1).into_val(&env)
-                    ),
-                ]
-                .into_val(&env)
+                shard_created_data.into_val(&env)
             ),
             (
                 client.address.clone(),

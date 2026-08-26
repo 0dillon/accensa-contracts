@@ -145,7 +145,11 @@ pub struct ReceiptAnchor;
 
 #[contractimpl]
 impl ReceiptAnchor {
-    pub fn initialize(env: Env, merchant: Address, shard_wasm_hash: BytesN<32>) -> Result<(), Error> {
+    pub fn initialize(
+        env: Env,
+        merchant: Address,
+        shard_wasm_hash: BytesN<32>,
+    ) -> Result<(), Error> {
         if env.storage().instance().has(&DataKey::Admin) {
             return Err(Error::AlreadyInitialized);
         }
@@ -194,7 +198,9 @@ impl ReceiptAnchor {
             &period_end,
         );
 
-        env.storage().instance().set(&DataKey::BatchCount, &batch_id);
+        env.storage()
+            .instance()
+            .set(&DataKey::BatchCount, &batch_id);
         env.storage()
             .instance()
             .extend_ttl(TTL_THRESHOLD, TTL_EXTEND);
@@ -254,7 +260,10 @@ impl ReceiptAnchor {
 
     /// Returns the number of shards the factory has deployed so far.
     pub fn get_shard_count(env: Env) -> u64 {
-        env.storage().instance().get(&DataKey::ShardCount).unwrap_or(0)
+        env.storage()
+            .instance()
+            .get(&DataKey::ShardCount)
+            .unwrap_or(0)
     }
 
     /// Returns the deployed address of shard `shard_index`, if it exists.
@@ -360,7 +369,11 @@ impl ReceiptAnchor {
         );
 
         env.storage().instance().set(&key, &shard_addr);
-        let shard_count: u64 = env.storage().instance().get(&DataKey::ShardCount).unwrap_or(0);
+        let shard_count: u64 = env
+            .storage()
+            .instance()
+            .get(&DataKey::ShardCount)
+            .unwrap_or(0);
         env.storage()
             .instance()
             .set(&DataKey::ShardCount, &(shard_count + 1));
@@ -397,8 +410,8 @@ impl ReceiptAnchor {
             .ok_or(Error::BatchNotFound)
     }
 
-    fn unwrap_shard_result<T>(
-        res: Result<Result<T, Error>, Result<Error, InvokeError>>,
+    fn unwrap_shard_result<T, C>(
+        res: Result<Result<T, C>, Result<Error, InvokeError>>,
     ) -> Result<T, Error> {
         match res {
             Ok(Ok(v)) => Ok(v),

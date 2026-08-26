@@ -96,7 +96,11 @@ impl ReceiptShard {
         let router: Address = env.storage().instance().get(&DataKey::Router).unwrap();
         router.require_auth();
 
-        let start: u64 = env.storage().instance().get(&DataKey::StartBatchId).unwrap();
+        let start: u64 = env
+            .storage()
+            .instance()
+            .get(&DataKey::StartBatchId)
+            .unwrap();
         let end: u64 = env.storage().instance().get(&DataKey::EndBatchId).unwrap();
         assert!(
             batch_id >= start && batch_id < end,
@@ -228,7 +232,10 @@ impl ReceiptShard {
     /// half-open range.
     pub fn get_range(env: Env) -> (u64, u64) {
         (
-            env.storage().instance().get(&DataKey::StartBatchId).unwrap(),
+            env.storage()
+                .instance()
+                .get(&DataKey::StartBatchId)
+                .unwrap(),
             env.storage().instance().get(&DataKey::EndBatchId).unwrap(),
         )
     }
