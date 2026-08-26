@@ -6,7 +6,7 @@ The two contracts are versioned together and share a tag. Versioning follows the
 policy in [`docs/RELEASING.md`](docs/RELEASING.md): while the project is pre-1.0,
 breaking changes bump the **minor** version, and they are called out as such.
 
-## [0.3.0] — unreleased
+## [0.3.0] — 2026-08-26
 
 ### ⚠️ Breaking
 
@@ -42,6 +42,13 @@ breaking changes bump the **minor** version, and they are called out as such.
   `readme_claim_payment_ref_is_receipt_leaf` and
   `readme_claim_refunds_outlive_pruned_batches` in
   `contracts/refund-vault/tests/integration_test.rs`.
+
+### Added
+
+- CI job enforcing `CHANGELOG.md` updates on contract changes and checking version alignment (#192).
+- Shared cross-implementation test vectors and conformance suite for `RefundVault` (#184).
+- Dependabot configuration for `cargo` and `github-actions` (#185).
+- CI WASM artifact uploading and size budget enforcement gate (#186).
 
 ### Fixed
 

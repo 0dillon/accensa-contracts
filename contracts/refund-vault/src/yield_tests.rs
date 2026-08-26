@@ -1,4 +1,5 @@
 #![cfg(test)]
+#![allow(unused_imports, unused_variables, dead_code)]
 
 use soroban_sdk::{
     contract, contracterror, contractimpl, contracttype,
@@ -747,7 +748,7 @@ fn test_harvest_when_paused() {
 #[test]
 fn test_yield_deployed_event() {
     use soroban_sdk::testutils::Events;
-    use soroban_sdk::{vec, IntoVal, Symbol};
+    use soroban_sdk::{vec, IntoVal, Map, Symbol, Val};
 
     let (env, vault_client, merchant, _token, strategy_addr, _tc) = setup_with_strategy(2000, 8000);
 
