@@ -21,6 +21,7 @@ pub enum Error {
     Unauthorized = 3,
     BatchNotFound = 4,
     BatchTooLarge = 5,
+    RootNotFound = 6,
 }
 
 #[contracttype]
@@ -29,6 +30,7 @@ pub enum DataKey {
     BatchCount,
     Batch(u64),
     PrunedUpTo,
+    RootBuffer,
 }
 
 #[contracttype]
@@ -79,6 +81,10 @@ const MAX_BATCH_SIZE: u32 = 1000;
 /// (the `PrunedUpTo` cursor advances across calls).
 const MAX_PRUNE_BATCHES: u64 = 100;
 
+/// Maximum number of historical roots retained in the ring buffer.
+/// Proofs are valid against any root still in the buffer.
+const ROOT_BUFFER_SIZE: u32 = 100;
+
 #[contract]
 pub struct ReceiptAnchor;
 
@@ -91,6 +97,9 @@ impl ReceiptAnchor {
         env.storage().instance().set(&DataKey::Admin, &merchant);
         env.storage().instance().set(&DataKey::BatchCount, &0u64);
         env.storage().instance().set(&DataKey::PrunedUpTo, &1u64);
+        env.storage()
+            .instance()
+            .set(&DataKey::RootBuffer, &Vec::<BytesN<32>>::new(&env));
         env.storage()
             .instance()
             .extend_ttl(TTL_THRESHOLD, TTL_EXTEND);
@@ -132,6 +141,15 @@ impl ReceiptAnchor {
         env.storage()
             .instance()
             .set(&DataKey::BatchCount, &batch_id);
+
+        // Push root into the ring buffer, evicting the oldest if full.
+        let mut buffer: Vec<BytesN<32>> =
+            env.storage().instance().get(&DataKey::RootBuffer).unwrap();
+        if buffer.len() >= ROOT_BUFFER_SIZE {
+            buffer.remove(0);
+        }
+        buffer.push_back(root.clone());
+        env.storage().instance().set(&DataKey::RootBuffer, &buffer);
 
         env.storage()
             .instance()
@@ -186,6 +204,64 @@ impl ReceiptAnchor {
         }
 
         Ok(computed_hash == batch.root.to_array())
+    }
+
+    /// Verify a receipt against any root in the historical ring buffer.
+    /// Returns `true` if the root is in the buffer AND the Merkle proof is valid.
+    pub fn verify_receipt_by_root(
+        env: Env,
+        root: BytesN<32>,
+        leaf: BytesN<32>,
+        proof: Vec<BytesN<32>>,
+    ) -> Result<bool, Error> {
+        let buffer: Vec<BytesN<32>> = env
+            .storage()
+            .instance()
+            .get(&DataKey::RootBuffer)
+            .ok_or(Error::NotInitialized)?;
+
+        let mut found = false;
+        for stored_root in buffer.iter() {
+            if stored_root == root {
+                found = true;
+                break;
+            }
+        }
+        if !found {
+            return Err(Error::RootNotFound);
+        }
+
+        let mut computed_hash = leaf.to_array();
+        for sibling_bytes in proof.into_iter() {
+            let sibling = sibling_bytes.to_array();
+            let mut combined = [0u8; 64];
+            if computed_hash <= sibling {
+                combined[..32].copy_from_slice(&computed_hash);
+                combined[32..].copy_from_slice(&sibling);
+            } else {
+                combined[..32].copy_from_slice(&sibling);
+                combined[32..].copy_from_slice(&computed_hash);
+            }
+            computed_hash = env
+                .crypto()
+                .sha256(&soroban_sdk::Bytes::from_slice(&env, &combined))
+                .to_array();
+        }
+
+        Ok(computed_hash == root.to_array())
+    }
+
+    /// Returns the current ring buffer of historical roots (read-only).
+    pub fn get_root_buffer(env: Env) -> Vec<BytesN<32>> {
+        env.storage()
+            .instance()
+            .get(&DataKey::RootBuffer)
+            .unwrap_or_else(|| Vec::new(&env))
+    }
+
+    /// Returns the maximum number of historical roots retained in the ring buffer.
+    pub fn get_root_buffer_size(_env: Env) -> u32 {
+        ROOT_BUFFER_SIZE
     }
 
     pub fn get_batch_count(env: Env) -> Result<u64, Error> {

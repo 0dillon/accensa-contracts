@@ -406,3 +406,200 @@ fn test_anchor_and_prune_events_emitted() {
         ]
     );
 }
+
+// ---------------------------------------------------------------------------
+// Ring buffer tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_root_buffer_starts_empty() {
+    let (_env, client, merchant) = setup();
+    client.initialize(&merchant);
+
+    let buffer = client.get_root_buffer();
+    assert_eq!(buffer.len(), 0);
+}
+
+#[test]
+fn test_root_buffer_grows_with_anchors() {
+    let (env, client, merchant) = setup();
+    client.initialize(&merchant);
+
+    let r1 = BytesN::from_array(&env, &[1u8; 32]);
+    let r2 = BytesN::from_array(&env, &[2u8; 32]);
+    client.anchor_batch(&r1, &1, &0, &10);
+    client.anchor_batch(&r2, &1, &11, &20);
+
+    let buffer = client.get_root_buffer();
+    assert_eq!(buffer.len(), 2);
+    assert_eq!(buffer.get(0).unwrap(), r1);
+    assert_eq!(buffer.get(1).unwrap(), r2);
+}
+
+#[test]
+fn test_verify_receipt_by_root_succeeds() {
+    let (env, client, merchant) = setup();
+    client.initialize(&merchant);
+
+    let leaf = BytesN::from_array(&env, &[7u8; 32]);
+    let _batch_id = client.anchor_batch(&leaf, &1, &0, &10);
+
+    // Single-leaf tree: root == leaf, empty proof.
+    assert!(client.verify_receipt_by_root(&leaf, &leaf, &vec![&env]));
+}
+
+#[test]
+fn test_verify_receipt_by_root_with_merkle_proof() {
+    let (env, client, merchant) = setup();
+    client.initialize(&merchant);
+
+    let l1 = BytesN::from_array(&env, &[1u8; 32]);
+    let l2 = BytesN::from_array(&env, &[2u8; 32]);
+    let n12 = hash_pair(&env, &l1, &l2);
+
+    let _batch_id = client.anchor_batch(&n12, &2, &0, &100);
+
+    // Verify l1 against the root n12.
+    assert!(client.verify_receipt_by_root(&n12, &l1, &vec![&env, l2.clone()]));
+    assert!(client.verify_receipt_by_root(&n12, &l2, &vec![&env, l1.clone()]));
+}
+
+#[test]
+fn test_verify_receipt_by_root_rejects_unknown_root() {
+    let (env, client, merchant) = setup();
+    client.initialize(&merchant);
+
+    let r1 = BytesN::from_array(&env, &[1u8; 32]);
+    client.anchor_batch(&r1, &1, &0, &10);
+
+    let unknown = BytesN::from_array(&env, &[99u8; 32]);
+    assert_eq!(
+        client.try_verify_receipt_by_root(&unknown, &r1, &vec![&env]),
+        Err(Ok(Error::RootNotFound))
+    );
+}
+
+#[test]
+fn test_verify_receipt_by_root_rejects_wrong_proof() {
+    let (env, client, merchant) = setup();
+    client.initialize(&merchant);
+
+    let l1 = BytesN::from_array(&env, &[1u8; 32]);
+    let l2 = BytesN::from_array(&env, &[2u8; 32]);
+    let root = hash_pair(&env, &l1, &l2);
+    client.anchor_batch(&root, &2, &0, &100);
+
+    let forged = BytesN::from_array(&env, &[99u8; 32]);
+    assert!(!client.verify_receipt_by_root(&root, &forged, &vec![&env, l2.clone()]));
+}
+
+#[test]
+fn test_verify_receipt_by_root_rejects_swapped_proof() {
+    let (env, client, merchant) = setup();
+    client.initialize(&merchant);
+
+    let l1 = BytesN::from_array(&env, &[1u8; 32]);
+    let l2 = BytesN::from_array(&env, &[2u8; 32]);
+    let root = hash_pair(&env, &l1, &l2);
+    client.anchor_batch(&root, &2, &0, &100);
+
+    // Use wrong sibling.
+    let wrong = BytesN::from_array(&env, &[88u8; 32]);
+    assert!(!client.verify_receipt_by_root(&root, &l1, &vec![&env, wrong]));
+}
+
+#[test]
+fn test_root_buffer_evicts_oldest_when_full() {
+    let (env, client, merchant) = setup();
+    client.initialize(&merchant);
+
+    // Fill the buffer to capacity.
+    let mut roots = Vec::new(&env);
+    for i in 0..ROOT_BUFFER_SIZE {
+        let root = BytesN::from_array(&env, &[i as u8; 32]);
+        roots.push_back(root.clone());
+        client.anchor_batch(&root, &1, &0, &1);
+    }
+
+    let buffer = client.get_root_buffer();
+    assert_eq!(buffer.len(), ROOT_BUFFER_SIZE);
+    assert_eq!(buffer.get(0).unwrap(), BytesN::from_array(&env, &[0u8; 32]));
+
+    // Anchor one more — oldest (index 0) should be evicted.
+    let new_root = BytesN::from_array(&env, &[255u8; 32]);
+    client.anchor_batch(&new_root, &1, &0, &1);
+
+    let buffer = client.get_root_buffer();
+    assert_eq!(buffer.len(), ROOT_BUFFER_SIZE);
+    // First entry is now [1u8; 32] (the second root we anchored).
+    assert_eq!(buffer.get(0).unwrap(), BytesN::from_array(&env, &[1u8; 32]));
+    // Last entry is the new root.
+    assert_eq!(buffer.get((ROOT_BUFFER_SIZE - 1) as u32).unwrap(), new_root);
+}
+
+#[test]
+fn test_verify_receipt_by_root_works_for_eviction_boundary() {
+    let (env, client, merchant) = setup();
+    client.initialize(&merchant);
+
+    // Anchor ROOT_BUFFER_SIZE + 1 batches, tracking all roots.
+    let mut roots = Vec::new(&env);
+    for i in 0..=ROOT_BUFFER_SIZE {
+        let root = BytesN::from_array(&env, &[i as u8; 32]);
+        roots.push_back(root.clone());
+        client.anchor_batch(&root, &1, &0, &1);
+    }
+
+    // The first root (index 0) was evicted — verification should fail.
+    assert_eq!(
+        client.try_verify_receipt_by_root(
+            &roots.get(0).unwrap(),
+            &roots.get(0).unwrap(),
+            &vec![&env]
+        ),
+        Err(Ok(Error::RootNotFound))
+    );
+
+    // The second root (index 1) is still in the buffer — should succeed.
+    assert!(client.verify_receipt_by_root(
+        &roots.get(1).unwrap(),
+        &roots.get(1).unwrap(),
+        &vec![&env]
+    ));
+
+    // The last root (index ROOT_BUFFER_SIZE) should also succeed.
+    let last = roots.get(ROOT_BUFFER_SIZE).unwrap();
+    assert!(client.verify_receipt_by_root(&last, &last, &vec![&env]));
+}
+
+#[test]
+fn test_get_root_buffer_size() {
+    let (_env, client, _merchant) = setup();
+    assert_eq!(client.get_root_buffer_size(), ROOT_BUFFER_SIZE);
+    assert_eq!(client.get_root_buffer_size(), 100);
+}
+
+#[test]
+fn test_verify_receipt_by_root_before_init_fails() {
+    let (env, client, _merchant) = setup();
+    let root = BytesN::from_array(&env, &[1u8; 32]);
+    assert_eq!(
+        client.try_verify_receipt_by_root(&root, &root, &vec![&env]),
+        Err(Ok(Error::NotInitialized))
+    );
+}
+
+#[test]
+fn test_existing_verify_receipt_still_works_with_buffer() {
+    let (env, client, merchant) = setup();
+    client.initialize(&merchant);
+
+    let l1 = BytesN::from_array(&env, &[1u8; 32]);
+    let l2 = BytesN::from_array(&env, &[2u8; 32]);
+    let root = hash_pair(&env, &l1, &l2);
+    let batch_id = client.anchor_batch(&root, &2, &0, &100);
+
+    // The original batch_id-based verification still works.
+    assert!(client.verify_receipt(&batch_id, &l1, &vec![&env, l2.clone()]));
+    assert!(client.verify_receipt(&batch_id, &l2, &vec![&env, l1.clone()]));
+}
