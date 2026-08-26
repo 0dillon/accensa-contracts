@@ -2,7 +2,7 @@
 
 use accensa_common::Error;
 use soroban_sdk::{
-    contract, contractevent, contractimpl, contractmeta, contracttrait, contracttype, token,
+    contract, contractclient, contractevent, contractimpl, contractmeta, contracttype, token,
     Address, BytesN, Env,
 };
 
@@ -146,11 +146,10 @@ pub struct YieldHarvestedEvent {
 ///
 /// Any contract that implements these methods can be registered as the vault's yield
 /// strategy. The vault calls these to deploy idle funds and harvest accrued yield.
-///
-/// Marked `#[contracttrait]` (not `#[contractimpl]`): a trait must use
-/// `#[contracttrait]` so its `{TraitName}Client` (here `YieldStrategyClient`) is
-/// generated; applying `#[contractimpl]` to a `trait` is invalid.
-#[contracttrait]
+/// The trait is annotated `#[contractclient(name = "YieldStrategyClient")]` (not
+/// `#[contractimpl]`, which only accepts `impl` blocks) so its client is
+/// generated from the interface.
+#[contractclient(name = "YieldStrategyClient")]
 pub trait YieldStrategy {
     /// Deploy `amount` tokens into the strategy. The vault transfers tokens to the
     /// strategy contract before calling this.
@@ -591,12 +590,11 @@ impl RefundVault {
             return Err(Error::DeploymentExceedsMax);
         }
 
-        // Transfer tokens to strategy, then hand them to the strategy so its
-        // own accounting (e.g. total principal deployed) stays in sync. The
-        // interface contract requires deposit to be called after the transfer.
+        // Transfer tokens to strategy, then notify the strategy of the deposit
+        // (it needs to record the principal so it can return it on withdrawal).
         token_client.transfer(&env.current_contract_address(), &strategy, &amount);
-        // The generated client returns `()` and aborts on a strategy error.
-        YieldStrategyClient::new(&env, &strategy).deposit(&amount);
+        let strategy_client = YieldStrategyClient::new(&env, &strategy);
+        strategy_client.deposit(&amount);
 
         env.storage()
             .instance()

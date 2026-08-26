@@ -61,7 +61,11 @@ impl MultisigAccount {
     /// `threshold` defaults to `signers.len()` (all signers required) when `0`
     /// is passed, so a single-signer account still needs that signer.
     pub fn __constructor(env: Env, signers: Vec<Address>, threshold: u32) {
-        let effective = if threshold == 0 { signers.len() } else { threshold };
+        let effective = if threshold == 0 {
+            signers.len()
+        } else {
+            threshold
+        };
         for signer in signers.iter() {
             env.storage()
                 .persistent()

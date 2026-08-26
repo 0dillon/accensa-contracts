@@ -10,6 +10,14 @@ use multisig_account::{MultisigAccount, MultisigAccountClient};
 use receipt_anchor::{ReceiptAnchor, ReceiptAnchorClient};
 use soroban_sdk::{testutils::Address as _, vec, Address, BytesN, Env, IntoVal, Val};
 
+/// The `ReceiptShard` wasm, built by `cargo build -p receipt-shard --target
+/// wasm32v1-none --release` before these tests run (see `.github/workflows/ci.yml`
+/// and the README's "Build and test" section). `anchor_batch` factory-deploys
+/// shards from a real installed wasm hash.
+mod shard_wasm {
+    soroban_sdk::contractimport!(file = "../../target/wasm32v1-none/release/receipt_shard.wasm");
+}
+
 /// Deploy the multisig account (signers `s1`, `s2`, threshold 2) and a
 /// `ReceiptAnchor` initialised with the account as merchant.
 ///
@@ -27,7 +35,8 @@ fn setup() -> (Env, Address, Address, Address, Address) {
     let anchor_id = env.register(ReceiptAnchor, ());
     let anchor = ReceiptAnchorClient::new(&env, &anchor_id);
     // `initialize` is not auth-gated, so it needs no auth entries.
-    anchor.initialize(&multisig_id);
+    let shard_wasm_hash = env.deployer().upload_contract_wasm(shard_wasm::WASM);
+    anchor.initialize(&multisig_id, &shard_wasm_hash);
 
     (env, anchor_id, multisig_id, s1, s2)
 }

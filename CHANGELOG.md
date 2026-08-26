@@ -45,11 +45,28 @@ breaking changes bump the **minor** version, and they are called out as such.
 
 ### Fixed
 
-- `deploy_to_yield` now calls the strategy's `deposit` after transferring
-  tokens, matching the `YieldStrategy` interface contract; previously the
-  strategy's own accounting stayed at zero and `withdraw` always failed.
-- The `YieldStrategy` interface trait now uses `#[contracttrait]`, the correct
-  soroban-sdk 27 attribute for interface traits.
+- **Build was broken on `main` after the yield-strategy merge (#200).** The
+  `YieldStrategy` trait used `#[contractimpl]`, which cannot generate a client on
+  a bare trait; it is now `#[contractclient(name = "YieldStrategyClient")]`.
+  `deploy_to_yield` also transferred tokens to the strategy without notifying it
+  (`strategy_client.deposit`), so the strategy never recorded the principal and
+  later withdrawals failed. `yield_tests.rs` additionally used event APIs that
+  do not exist in this SDK. No deployed contract is affected — this restores a
+  compiling, green test suite.
+
+### Tested
+
+- Property-based fuzz suites in `contracts/*/src/fuzz_test.rs` now generate
+  random operation sequences and assert invariants after every step: pruning
+  stays a contiguous prefix with a monotonic `PrunedUpTo` cursor, Merkle
+  verification rejects every wrong proof shape (wrong leaf/sibling/length/batch
+  and reversed level order), vault float always equals
+  `deposits - refunds - withdrawals` and never goes negative, cumulative
+  refunds per `payment_ref` never exceed the supplied ceiling, paused
+  operations never mutate state, and TTL extension never shortens a TTL while
+  missing records always error. Budgets
+  are tunable via `FUZZ_CASES`/`FUZZ_SEQ_LEN` with longer `#[ignore]`d local
+  profiles.
 
 ### Deployment status
 

@@ -65,4 +65,8 @@ pub enum Error {
     BatchNotFound = 100,
     /// A batch larger than `MAX_BATCH_SIZE` was submitted.
     BatchTooLarge = 101,
+    /// A shard call returned something other than the expected value shape —
+    /// a wasm-level invocation failure or a value that failed to decode.
+    /// Distinct from `BatchNotFound`, which a shard returns deliberately.
+    ShardCallFailed = 102,
 }

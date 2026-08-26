@@ -1271,11 +1271,20 @@ dependencies = [
 
 [[package]]
 name = "receipt-anchor"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "accensa-common",
  "multisig-account",
  "proptest",
+ "receipt-shard",
+ "soroban-sdk",
+]
+
+[[package]]
+name = "receipt-shard"
+version = "0.1.0"
+dependencies = [
+ "accensa-common",
  "soroban-sdk",
 ]
 
