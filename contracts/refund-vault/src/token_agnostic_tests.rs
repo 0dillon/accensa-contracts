@@ -172,7 +172,7 @@ fn test_full_lifecycle_with_zero_decimal_token() {
     // Refund the smallest representable unit (1) to a buyer.
     let payment_ref = BytesN::from_array(&env, &[7u8; 32]);
     let buyer = Address::generate(&env);
-    client.refund(&payment_ref, &buyer, &1, &0);
+    client.refund(&payment_ref, &buyer, &1, &0, &1);
     assert_eq!(token_client.balance(&buyer), 1);
     assert_eq!(token_client.balance(&client.address), 999);
 
@@ -195,7 +195,7 @@ fn test_full_lifecycle_with_two_decimal_token() {
     // Refund 0.45 tokens, then withdraw the remaining 123.00 tokens.
     let payment_ref = BytesN::from_array(&env, &[8u8; 32]);
     let buyer = Address::generate(&env);
-    client.refund(&payment_ref, &buyer, &45, &0);
+    client.refund(&payment_ref, &buyer, &45, &0, &45);
     client.withdraw(&12_300, &merchant);
 
     assert_eq!(token_client.balance(&buyer), 45);
@@ -212,7 +212,7 @@ fn test_float_bound_check_with_non_7_decimal_token() {
     let payment_ref = BytesN::from_array(&env, &[14u8; 32]);
     let buyer = Address::generate(&env);
     assert_eq!(
-        client.try_refund(&payment_ref, &buyer, &101, &0),
+        client.try_refund(&payment_ref, &buyer, &101, &0, &101),
         Err(Ok(Error::InsufficientFloat))
     );
 }
@@ -228,13 +228,13 @@ fn test_refund_exactly_equal_to_float_succeeds() {
     // A refund equal to the entire float is allowed...
     let payment_ref = BytesN::from_array(&env, &[9u8; 32]);
     let buyer = Address::generate(&env);
-    client.refund(&payment_ref, &buyer, &1_000, &0);
+    client.refund(&payment_ref, &buyer, &1_000, &0, &1_000);
     assert_eq!(token_client.balance(&client.address), 0);
 
     // ...and any further refund is bounded by the now-empty float.
     let payment_ref2 = BytesN::from_array(&env, &[10u8; 32]);
     assert_eq!(
-        client.try_refund(&payment_ref2, &buyer, &1, &0),
+        client.try_refund(&payment_ref2, &buyer, &1, &0, &1),
         Err(Ok(Error::InsufficientFloat))
     );
 }
@@ -250,7 +250,7 @@ fn test_smallest_unit_round_trip() {
 
     let payment_ref = BytesN::from_array(&env, &[11u8; 32]);
     let buyer = Address::generate(&env);
-    client.refund(&payment_ref, &buyer, &1, &0);
+    client.refund(&payment_ref, &buyer, &1, &0, &1);
     assert_eq!(token_client.balance(&buyer), 1);
 
     client.withdraw(&1, &merchant);
@@ -293,14 +293,14 @@ fn test_i128_extreme_refund() {
     // miscompare at the boundary of its integer type.
     let payment_ref = BytesN::from_array(&env, &[12u8; 32]);
     let buyer = Address::generate(&env);
-    client.refund(&payment_ref, &buyer, &extreme, &0);
+    client.refund(&payment_ref, &buyer, &extreme, &0, &extreme);
     assert_eq!(token_client.balance(&buyer), extreme);
     assert_eq!(token_client.balance(&client.address), 0);
 
     // One unit over the empty float is rejected by the bound check.
     let payment_ref2 = BytesN::from_array(&env, &[13u8; 32]);
     assert_eq!(
-        client.try_refund(&payment_ref2, &buyer, &1, &0),
+        client.try_refund(&payment_ref2, &buyer, &1, &0, &1),
         Err(Ok(Error::InsufficientFloat))
     );
 }
