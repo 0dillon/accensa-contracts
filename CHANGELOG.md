@@ -8,6 +8,13 @@ breaking changes bump the **minor** version, and they are called out as such.
 
 ## [Unreleased]
 
+### Added
+
+- CI job enforcing `CHANGELOG.md` updates on contract changes and checking version alignment (#192).
+- Shared cross-implementation test vectors and conformance suite for `RefundVault` (#184).
+- Dependabot configuration for `cargo` and `github-actions` (#185).
+- CI WASM artifact uploading and size budget enforcement gate (#186).
+
 ### Fixed
 
 - **Build was broken on `main` after the yield-strategy merge (#200).** The
@@ -31,6 +38,8 @@ breaking changes bump the **minor** version, and they are called out as such.
   extension never shortens a TTL while missing records always error. Budgets
   are tunable via `FUZZ_CASES`/`FUZZ_SEQ_LEN` with longer `#[ignore]`d local
   profiles.
+
+## [0.3.0] — 2026-08-26
 
 ## [0.2.0] — 2026-08-14
 
