@@ -1,6 +1,6 @@
 [package]
-name = "receipt-anchor"
-version = "0.3.0"
+name = "receipt-shard"
+version = "0.1.0"
 edition = "2021"
 
 [lints]
@@ -14,5 +14,4 @@ crate-type = ["cdylib", "rlib"]
 soroban-sdk = { workspace = true }
 
 [dev-dependencies]
-proptest = "1.4"
 soroban-sdk = { workspace = true, features = ["testutils"] }
