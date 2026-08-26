@@ -319,6 +319,30 @@
                       "key": {
                         "vec": [
                           {
+                            "symbol": "LastAnchorTime"
+                          }
+                        ]
+                      },
+                      "val": {
+                        "u64": "0"
+                      }
+                    },
+                    {
+                      "key": {
+                        "vec": [
+                          {
+                            "symbol": "MinAnchorInterval"
+                          }
+                        ]
+                      },
+                      "val": {
+                        "u32": 0
+                      }
+                    },
+                    {
+                      "key": {
+                        "vec": [
+                          {
                             "symbol": "PrunedUpTo"
                           }
                         ]

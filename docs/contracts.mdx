@@ -28,6 +28,23 @@ fn anchor_batch(env: Env, root: BytesN<32>, count: u32, period_start: u64, perio
 - **Authentication:** Requires the merchant's signature (`require_auth`).
 - **Emits:** `anchored` event carrying the batch id and the stored `BatchRecord`.
 - **Returns:** The assigned `batch_id`.
+- **Errors:** `BatchTooLarge` if `count` exceeds `MAX_BATCH_SIZE`. `AnchorRateLimited` if the minimum anchor interval has not elapsed since the last anchor (only enforced when `min_anchor_interval > 0`).
+
+### `set_min_anchor_interval`
+Sets the minimum interval (in seconds) between consecutive anchors. Must be ≤ `MAX_ANCHOR_INTERVAL` (86,400 / 24 h). Setting to 0 disables rate-limiting entirely.
+
+```rust
+fn set_min_anchor_interval(env: Env, interval: u32) -> Result<(), Error>
+```
+- **Authentication:** Requires the merchant's signature.
+- **Errors:** `BatchTooLarge` if `interval` exceeds `MAX_ANCHOR_INTERVAL`.
+
+### `get_min_anchor_interval`
+Returns the current minimum anchor interval in seconds (read-only).
+
+```rust
+fn get_min_anchor_interval(env: Env) -> u32
+```
 
 ### `get_batch`
 Reads a stored batch commitment.

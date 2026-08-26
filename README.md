@@ -63,10 +63,12 @@ they were charged correctly, with no trusted API in the path.
 | Function | Purpose |
 |---|---|
 | `initialize(merchant)` | Binds the contract to a merchant admin address. |
-| `anchor_batch(root, count, period_start, period_end) -> u64` | Anchors a batch root, returns its `batch_id`. Merchant auth required. `count` must be $\le$ 1000 (`MAX_BATCH_SIZE`). |
+| `anchor_batch(root, count, period_start, period_end) -> u64` | Anchors a batch root, returns its `batch_id`. Merchant auth required. `count` must be $\le$ 1000 (`MAX_BATCH_SIZE`). Rate-limited if `min_anchor_interval > 0`. |
 | `get_batch(batch_id) -> BatchRecord` | Reads an anchored batch. |
 | `get_batch_count() -> u64` | Returns the total number of anchored batches. Read-only. |
 | `get_max_batch_size() -> u32` | Returns `MAX_BATCH_SIZE` (currently 1000). Read-only; clients should discover the limit via this getter rather than hard-coding it. |
+| `set_min_anchor_interval(interval)` | Sets the minimum seconds between anchors (0 = disabled, max 86,400). Merchant auth required. |
+| `get_min_anchor_interval() -> u32` | Returns the current minimum anchor interval in seconds. Read-only. |
 | `verify_receipt(batch_id, leaf, proof) -> bool` | Verifies a receipt against the anchored root. Read-only, free to call. Returns `ProofTooLong` if the proof exceeds `MAX_PROOF_LEN` (10). |
 | `verify_receipt_by_root(root, leaf, proof) -> bool` | Verifies a receipt against any root in the historical ring buffer. Returns `ProofTooLong` if the proof exceeds `MAX_PROOF_LEN`. |
 | `get_root_buffer() -> Vec<BytesN<32>>` | Returns the current ring buffer of historical roots. Read-only. |

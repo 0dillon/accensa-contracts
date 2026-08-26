@@ -23,6 +23,7 @@ pub enum Error {
     BatchTooLarge = 5,
     RootNotFound = 6,
     ProofTooLong = 7,
+    AnchorRateLimited = 8,
 }
 
 #[contracttype]
@@ -32,6 +33,8 @@ pub enum DataKey {
     Batch(u64),
     PrunedUpTo,
     RootBuffer,
+    LastAnchorTime,
+    MinAnchorInterval,
 }
 
 #[contracttype]
@@ -99,6 +102,10 @@ const MAX_PRUNE_BATCHES: u64 = 100;
 /// Proofs are valid against any root still in the buffer.
 const ROOT_BUFFER_SIZE: u32 = 100;
 
+/// Maximum allowed value for `min_anchor_interval` (24 hours in seconds).
+/// Prevents the admin from setting an unreasonably high interval.
+const MAX_ANCHOR_INTERVAL: u32 = 86_400;
+
 #[contract]
 pub struct ReceiptAnchor;
 
@@ -114,6 +121,9 @@ impl ReceiptAnchor {
         env.storage()
             .instance()
             .set(&DataKey::RootBuffer, &Vec::<BytesN<32>>::new(&env));
+        env.storage()
+            .instance()
+            .set(&DataKey::MinAnchorInterval, &0u32);
         env.storage()
             .instance()
             .extend_ttl(TTL_THRESHOLD, TTL_EXTEND);
@@ -138,6 +148,25 @@ impl ReceiptAnchor {
             .ok_or(Error::NotInitialized)?;
         merchant.require_auth();
 
+        // Rate-limit check: enforce only when interval > 0 and a previous anchor exists.
+        let min_interval: u32 = env
+            .storage()
+            .instance()
+            .get(&DataKey::MinAnchorInterval)
+            .unwrap_or(0);
+        if min_interval > 0 {
+            if let Some(last_time) = env
+                .storage()
+                .instance()
+                .get::<_, u64>(&DataKey::LastAnchorTime)
+            {
+                let now = env.ledger().timestamp();
+                if now < last_time + (min_interval as u64) {
+                    return Err(Error::AnchorRateLimited);
+                }
+            }
+        }
+
         let mut batch_id: u64 = env.storage().instance().get(&DataKey::BatchCount).unwrap();
         batch_id += 1;
 
@@ -155,6 +184,11 @@ impl ReceiptAnchor {
         env.storage()
             .instance()
             .set(&DataKey::BatchCount, &batch_id);
+
+        // Store the anchor timestamp for rate-limiting.
+        env.storage()
+            .instance()
+            .set(&DataKey::LastAnchorTime, &env.ledger().timestamp());
 
         // Push root into the ring buffer, evicting the oldest if full.
         let mut buffer: Vec<BytesN<32>> =
@@ -289,6 +323,35 @@ impl ReceiptAnchor {
             .instance()
             .get(&DataKey::BatchCount)
             .ok_or(Error::NotInitialized)
+    }
+
+    /// Sets the minimum interval (in seconds) between consecutive anchors.
+    /// Must be ≤ `MAX_ANCHOR_INTERVAL` (86,400 / 24 h). Setting to 0 disables
+    /// rate-limiting entirely.
+    pub fn set_min_anchor_interval(env: Env, interval: u32) -> Result<(), Error> {
+        let merchant: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .ok_or(Error::NotInitialized)?;
+        merchant.require_auth();
+
+        if interval > MAX_ANCHOR_INTERVAL {
+            return Err(Error::BatchTooLarge);
+        }
+
+        env.storage()
+            .instance()
+            .set(&DataKey::MinAnchorInterval, &interval);
+        Ok(())
+    }
+
+    /// Returns the current minimum anchor interval in seconds (read-only).
+    pub fn get_min_anchor_interval(env: Env) -> u32 {
+        env.storage()
+            .instance()
+            .get(&DataKey::MinAnchorInterval)
+            .unwrap_or(0)
     }
 
     /// Returns the maximum number of receipts allowed in a single `anchor_batch`.

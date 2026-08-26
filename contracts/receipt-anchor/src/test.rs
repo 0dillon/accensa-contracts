@@ -712,3 +712,280 @@ fn test_get_max_proof_len() {
     assert_eq!(client.get_max_proof_len(), MAX_PROOF_LEN);
     assert_eq!(client.get_max_proof_len(), 10);
 }
+
+// ---------------------------------------------------------------------------
+// Rate-limiting tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_first_anchor_always_succeeds() {
+    let (env, client, merchant) = setup();
+    client.initialize(&merchant);
+    client.set_min_anchor_interval(&60);
+
+    // First anchor — no previous timestamp stored, should succeed.
+    let root = BytesN::from_array(&env, &[1u8; 32]);
+    env.ledger().with_mut(|li| {
+        li.sequence_number = 10;
+        li.timestamp = 1000;
+    });
+    assert_eq!(client.anchor_batch(&root, &1, &0, &10), 1);
+}
+
+#[test]
+fn test_anchor_rejected_within_interval() {
+    let (env, client, merchant) = setup();
+    client.initialize(&merchant);
+    client.set_min_anchor_interval(&60);
+
+    let root1 = BytesN::from_array(&env, &[1u8; 32]);
+    let root2 = BytesN::from_array(&env, &[2u8; 32]);
+
+    env.ledger().with_mut(|li| {
+        li.sequence_number = 10;
+        li.timestamp = 1000;
+    });
+    client.anchor_batch(&root1, &1, &0, &10);
+
+    // Second anchor at the same timestamp — should be rate-limited.
+    env.ledger().with_mut(|li| {
+        li.sequence_number = 11;
+        li.timestamp = 1000;
+    });
+    assert_eq!(
+        client.try_anchor_batch(&root2, &1, &11, &20),
+        Err(Ok(Error::AnchorRateLimited))
+    );
+}
+
+#[test]
+fn test_anchor_succeeds_after_interval() {
+    let (env, client, merchant) = setup();
+    client.initialize(&merchant);
+    client.set_min_anchor_interval(&60);
+
+    let root1 = BytesN::from_array(&env, &[1u8; 32]);
+    let root2 = BytesN::from_array(&env, &[2u8; 32]);
+
+    env.ledger().with_mut(|li| {
+        li.sequence_number = 10;
+        li.timestamp = 1000;
+    });
+    client.anchor_batch(&root1, &1, &0, &10);
+
+    // Exactly at the boundary (1000 + 60 = 1060) — should succeed.
+    env.ledger().with_mut(|li| {
+        li.sequence_number = 20;
+        li.timestamp = 1060;
+    });
+    assert_eq!(client.anchor_batch(&root2, &1, &11, &20), 2);
+}
+
+#[test]
+fn test_anchor_rejected_one_second_before_boundary() {
+    let (env, client, merchant) = setup();
+    client.initialize(&merchant);
+    client.set_min_anchor_interval(&60);
+
+    let root1 = BytesN::from_array(&env, &[1u8; 32]);
+    let root2 = BytesN::from_array(&env, &[2u8; 32]);
+    let root3 = BytesN::from_array(&env, &[3u8; 32]);
+
+    env.ledger().with_mut(|li| {
+        li.sequence_number = 10;
+        li.timestamp = 1000;
+    });
+    client.anchor_batch(&root1, &1, &0, &10);
+
+    // One second before boundary (1059 < 1060) — should be rate-limited.
+    env.ledger().with_mut(|li| {
+        li.sequence_number = 20;
+        li.timestamp = 1059;
+    });
+    assert_eq!(
+        client.try_anchor_batch(&root2, &1, &11, &20),
+        Err(Ok(Error::AnchorRateLimited))
+    );
+
+    // Exactly at boundary — should succeed. batch_id is 2 because root2 was rejected.
+    env.ledger().with_mut(|li| {
+        li.sequence_number = 21;
+        li.timestamp = 1060;
+    });
+    assert_eq!(client.anchor_batch(&root3, &1, &21, &30), 2);
+}
+
+#[test]
+fn test_interval_zero_disables_rate_limit() {
+    let (env, client, merchant) = setup();
+    client.initialize(&merchant);
+    // Interval is 0 by default.
+
+    let root1 = BytesN::from_array(&env, &[1u8; 32]);
+    let root2 = BytesN::from_array(&env, &[2u8; 32]);
+
+    env.ledger().with_mut(|li| {
+        li.sequence_number = 10;
+        li.timestamp = 1000;
+    });
+    client.anchor_batch(&root1, &1, &0, &10);
+
+    // Same timestamp — should succeed because interval is 0.
+    env.ledger().with_mut(|li| {
+        li.sequence_number = 11;
+        li.timestamp = 1000;
+    });
+    assert_eq!(client.anchor_batch(&root2, &1, &11, &20), 2);
+}
+
+#[test]
+fn test_changing_interval_takes_effect() {
+    let (env, client, merchant) = setup();
+    client.initialize(&merchant);
+
+    let root1 = BytesN::from_array(&env, &[1u8; 32]);
+    let root2 = BytesN::from_array(&env, &[2u8; 32]);
+    let root3 = BytesN::from_array(&env, &[3u8; 32]);
+
+    // First anchor with interval = 0.
+    env.ledger().with_mut(|li| {
+        li.sequence_number = 10;
+        li.timestamp = 1000;
+    });
+    client.anchor_batch(&root1, &1, &0, &10);
+
+    // Second anchor at same time — succeeds (interval = 0).
+    env.ledger().with_mut(|li| {
+        li.sequence_number = 11;
+        li.timestamp = 1000;
+    });
+    client.anchor_batch(&root2, &1, &11, &20);
+
+    // Now set interval to 60.
+    client.set_min_anchor_interval(&60);
+
+    // Third anchor at same time — should be rate-limited now.
+    env.ledger().with_mut(|li| {
+        li.sequence_number = 12;
+        li.timestamp = 1000;
+    });
+    assert_eq!(
+        client.try_anchor_batch(&root3, &1, &21, &30),
+        Err(Ok(Error::AnchorRateLimited))
+    );
+}
+
+#[test]
+#[should_panic]
+fn test_set_min_anchor_interval_requires_admin_auth() {
+    let env = Env::default();
+    let contract_id = env.register(ReceiptAnchor, ());
+    let client = ReceiptAnchorClient::new(&env, &contract_id);
+    let merchant = Address::generate(&env);
+
+    env.mock_all_auths();
+    client.initialize(&merchant);
+
+    env.set_auths(&[]);
+    client.set_min_anchor_interval(&60);
+}
+
+#[test]
+fn test_set_min_anchor_interval_requires_init() {
+    let (_env, client, _merchant) = setup();
+    assert_eq!(
+        client.try_set_min_anchor_interval(&60),
+        Err(Ok(Error::NotInitialized))
+    );
+}
+
+#[test]
+fn test_set_min_anchor_interval_enforces_cap() {
+    let (_env, client, merchant) = setup();
+    client.initialize(&merchant);
+
+    // At the cap — should succeed.
+    client.set_min_anchor_interval(&MAX_ANCHOR_INTERVAL);
+    assert_eq!(client.get_min_anchor_interval(), MAX_ANCHOR_INTERVAL);
+
+    // Over the cap — should fail with BatchTooLarge (reusing existing error).
+    assert_eq!(
+        client.try_set_min_anchor_interval(&(MAX_ANCHOR_INTERVAL + 1)),
+        Err(Ok(Error::BatchTooLarge))
+    );
+}
+
+#[test]
+fn test_get_min_anchor_interval_default() {
+    let (_env, client, merchant) = setup();
+    client.initialize(&merchant);
+    assert_eq!(client.get_min_anchor_interval(), 0);
+}
+
+#[test]
+fn test_rate_limit_with_large_interval() {
+    let (env, client, merchant) = setup();
+    client.initialize(&merchant);
+    client.set_min_anchor_interval(&3600); // 1 hour
+
+    let root1 = BytesN::from_array(&env, &[1u8; 32]);
+    let root2 = BytesN::from_array(&env, &[2u8; 32]);
+    let root3 = BytesN::from_array(&env, &[3u8; 32]);
+
+    env.ledger().with_mut(|li| {
+        li.sequence_number = 10;
+        li.timestamp = 1000;
+    });
+    client.anchor_batch(&root1, &1, &0, &10);
+
+    // 30 minutes later — still rate-limited.
+    env.ledger().with_mut(|li| {
+        li.sequence_number = 100;
+        li.timestamp = 2800;
+    });
+    assert_eq!(
+        client.try_anchor_batch(&root2, &1, &11, &20),
+        Err(Ok(Error::AnchorRateLimited))
+    );
+
+    // 1 hour later — should succeed. batch_id is 2 because root2 was rejected.
+    env.ledger().with_mut(|li| {
+        li.sequence_number = 100;
+        li.timestamp = 4600;
+    });
+    assert_eq!(client.anchor_batch(&root3, &1, &21, &30), 2);
+}
+
+#[test]
+fn test_rate_limit_resets_after_successful_anchor() {
+    let (env, client, merchant) = setup();
+    client.initialize(&merchant);
+    client.set_min_anchor_interval(&60);
+
+    let root1 = BytesN::from_array(&env, &[1u8; 32]);
+    let root2 = BytesN::from_array(&env, &[2u8; 32]);
+    let root3 = BytesN::from_array(&env, &[3u8; 32]);
+
+    env.ledger().with_mut(|li| {
+        li.sequence_number = 10;
+        li.timestamp = 1000;
+    });
+    client.anchor_batch(&root1, &1, &0, &10);
+
+    // Advance past interval.
+    env.ledger().with_mut(|li| {
+        li.sequence_number = 20;
+        li.timestamp = 1060;
+    });
+    client.anchor_batch(&root2, &1, &11, &20);
+
+    // Immediately try again — should be rate-limited (last anchor was at 1060).
+    env.ledger().with_mut(|li| {
+        li.sequence_number = 21;
+        li.timestamp = 1060;
+    });
+    assert_eq!(
+        client.try_anchor_batch(&root3, &1, &21, &30),
+        Err(Ok(Error::AnchorRateLimited))
+    );
+}
