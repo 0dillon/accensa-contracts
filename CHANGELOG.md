@@ -6,6 +6,17 @@ The two contracts are versioned together and share a tag. Versioning follows the
 policy in [`docs/RELEASING.md`](docs/RELEASING.md): while the project is pre-1.0,
 breaking changes bump the **minor** version, and they are called out as such.
 
+## [Unreleased]
+
+### Added
+
+- **Holistic paused-state invariant test for `RefundVault`** (issue #80). A
+  parameterized test initializes and funds the vault, strictly pauses it, then
+  replays every state-changing operation (`deposit`, `refund`, `withdraw`, and
+  the yield surface), asserting each is rejected with `Error::Paused` and
+  mutates no balance, refund record or yield-accounting state. It then unpauses
+  and proves the exact same operations resume their normal outcomes.
+
 ## [0.3.0] — 2026-08-26
 
 ### ⚠️ Breaking
