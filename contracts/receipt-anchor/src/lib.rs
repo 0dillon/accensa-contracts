@@ -12,6 +12,7 @@ contractmeta!(
     val = "https://github.com/accensa/accensa-contracts"
 );
 contractmeta!(key = "commit", val = env!("GIT_SHA"));
+contractmeta!(key = "commit_dirty", val = env!("GIT_DIRTY"));
 
 #[contracterror]
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]

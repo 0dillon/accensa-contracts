@@ -45,6 +45,10 @@ fn test_deposit_moves_tokens_into_vault() {
     assert_eq!(token_client.balance(&merchant), FLOAT - 600_000);
 }
 
+/// Deposits are deliberately merchant-only (see docs/SECURITY_MODEL.md): the
+/// vault only ever holds the merchant's own funds, so a third party cannot
+/// contribute float — dust or otherwise — that the merchant has not authorised.
+/// This test pins that guarantee so it cannot be relaxed by accident.
 #[test]
 fn test_deposit_from_non_merchant_fails() {
     let (env, client, _merchant, _token) = setup(100);
@@ -390,6 +394,81 @@ fn test_events_emitted() {
             )
         ]
     );
+}
+
+#[test]
+fn test_pause_unpause_refund_window_events_emitted() {
+    use soroban_sdk::testutils::Events;
+    use soroban_sdk::{vec, IntoVal, Map, Symbol, Val};
+
+    let (env, client, _merchant, _token) = setup(100);
+    let empty_data: Map<Val, Val> = Map::new(&env);
+
+    env.ledger().with_mut(|li| li.sequence_number = 500);
+    client.pause();
+
+    assert_eq!(
+        env.events().all().filter_by_contract(&client.address),
+        vec![
+            &env,
+            (
+                client.address.clone(),
+                (Symbol::new(&env, "pause_event"), 500u32).into_val(&env),
+                empty_data.clone().into_val(&env)
+            )
+        ]
+    );
+
+    env.ledger().with_mut(|li| li.sequence_number = 600);
+    client.unpause();
+
+    assert_eq!(
+        env.events().all().filter_by_contract(&client.address),
+        vec![
+            &env,
+            (
+                client.address.clone(),
+                (Symbol::new(&env, "unpause_event"), 600u32).into_val(&env),
+                empty_data.clone().into_val(&env)
+            )
+        ]
+    );
+
+    env.ledger().with_mut(|li| li.sequence_number = 700);
+    client.set_refund_window(&300);
+
+    assert_eq!(
+        env.events().all().filter_by_contract(&client.address),
+        vec![
+            &env,
+            (
+                client.address.clone(),
+                (
+                    Symbol::new(&env, "refund_window_updated_event"),
+                    100u32,
+                    300u32
+                )
+                    .into_val(&env),
+                empty_data.into_val(&env)
+            )
+        ]
+    );
+}
+
+/// The commit hash embedded via contractmeta must be real provenance, not the
+/// silent "unknown" fallback, in a normal repository build (see build.rs).
+#[test]
+fn test_commit_meta_is_well_formed() {
+    let sha = env!("GIT_SHA");
+    assert_ne!(sha, "unknown", "GIT_SHA must not fall back to 'unknown'");
+    assert_eq!(sha.len(), 40, "GIT_SHA should be 40 hex chars, got: {sha}");
+    assert!(
+        sha.bytes().all(|b| b.is_ascii_hexdigit()),
+        "GIT_SHA contains non-hex chars: {sha}"
+    );
+
+    let dirty = env!("GIT_DIRTY");
+    assert!(dirty == "0" || dirty == "1", "GIT_DIRTY must be '0' or '1', got: {dirty}");
 }
 
 #[test]

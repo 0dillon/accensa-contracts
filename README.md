@@ -116,6 +116,9 @@ Emits:
 | `DepositEvent` | `("deposit_event", from)` | `amount` |
 | `RefundEvent` | `("refund_event", payment_ref)` | `amount`, `recipient`, `ledger` |
 | `WithdrawEvent` | `("withdraw_event", to)` | `amount` |
+| `PauseEvent` | `("pause_event", ledger)` | — |
+| `UnpauseEvent` | `("unpause_event", ledger)` | — |
+| `RefundWindowUpdatedEvent` | `("refund_window_updated_event", previous_window, new_window)` | — |
 
 The `RefundEvent` data map mirrors `RefundRecord`, so an indexer decodes it with the
 same shape stored under the payment ref.
