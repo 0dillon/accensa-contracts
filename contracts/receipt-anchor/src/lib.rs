@@ -74,6 +74,11 @@ const TTL_THRESHOLD: u32 = 100;
 
 const MAX_BATCH_SIZE: u32 = 1000;
 
+/// Maximum number of batches to delete in a single `prune_batches` call.
+/// Keeps per-transaction compute bounded; callers resume by invoking again
+/// (the `PrunedUpTo` cursor advances across calls).
+const MAX_PRUNE_BATCHES: u64 = 100;
+
 #[contract]
 pub struct ReceiptAnchor;
 
@@ -228,8 +233,9 @@ impl ReceiptAnchor {
             .unwrap_or(0);
 
         let mut pruned_up_to = start_batch_id;
+        let mut pruned_count: u64 = 0;
 
-        while pruned_up_to <= batch_count {
+        while pruned_up_to <= batch_count && pruned_count < MAX_PRUNE_BATCHES {
             if let Some(record) = env
                 .storage()
                 .persistent()
@@ -240,6 +246,7 @@ impl ReceiptAnchor {
                         .persistent()
                         .remove(&DataKey::Batch(pruned_up_to));
                     pruned_up_to += 1;
+                    pruned_count += 1;
                 } else {
                     break;
                 }
@@ -247,6 +254,7 @@ impl ReceiptAnchor {
                 // If it's not present, it might have been manually deleted or we skipped it.
                 // We should just increment and continue.
                 pruned_up_to += 1;
+                pruned_count += 1;
             }
         }
 
