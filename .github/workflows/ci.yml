@@ -59,6 +59,28 @@ jobs:
       - name: Run Tests
         run: cargo test
 
+  benchmarks:
+    name: benchmark-budgets
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32v1-none
+      - name: Cache cargo
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-bench-${{ hashFiles('**/Cargo.lock') }}
+      - name: Run Budget Measurement Tests
+        # Placeholder for actual budget enforcement (Issue #66).
+        # Ensures that the testutils budget harness compiles and works.
+        run: cargo test -p testutils --profile release-with-logs
+
   build-wasm:
     name: build-wasm
     runs-on: ubuntu-latest

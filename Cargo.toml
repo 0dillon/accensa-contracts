@@ -2,6 +2,7 @@
 members = [
     "contracts/receipt-anchor",
     "contracts/refund-vault",
+    "contracts/testutils",
 ]
 resolver = "2"
 
