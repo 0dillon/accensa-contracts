@@ -43,7 +43,36 @@ A read-only convenience function for on-chain receipt verification. Proof siblin
 ```rust
 fn verify_receipt(env: Env, batch_id: u64, leaf: BytesN<32>, proof: Vec<BytesN<32>>) -> Result<bool, Error>
 ```
-- **Errors:** `BatchNotFound` if the batch id does not exist.
+- **Errors:** `BatchNotFound` if the batch id does not exist. `ProofTooLong` if the proof exceeds the maximum valid length (derived from `MAX_BATCH_SIZE`; call `get_max_proof_len` to discover the limit at runtime).
+
+### `verify_receipt_by_root`
+Verify a receipt against any root in the historical ring buffer. Returns `true` if the root is in the buffer AND the Merkle proof is valid. Useful for delayed off-chain processes that may not know the exact `batch_id`.
+
+```rust
+fn verify_receipt_by_root(env: Env, root: BytesN<32>, leaf: BytesN<32>, proof: Vec<BytesN<32>>) -> Result<bool, Error>
+```
+- **Errors:** `NotInitialized` if the contract has not been initialized. `RootNotFound` if the root is not in the ring buffer. `ProofTooLong` if the proof exceeds the maximum valid length.
+
+### `get_root_buffer`
+Returns the current ring buffer of historical Merkle roots (read-only). The buffer is bounded to `ROOT_BUFFER_SIZE` entries; oldest roots are evicted when full.
+
+```rust
+fn get_root_buffer(env: Env) -> Vec<BytesN<32>>
+```
+
+### `get_root_buffer_size`
+Returns the maximum number of historical roots retained in the ring buffer (read-only).
+
+```rust
+fn get_root_buffer_size(env: Env) -> u32
+```
+
+### `get_max_proof_len`
+Returns the maximum valid Merkle proof length, derived from `MAX_BATCH_SIZE`. Clients should call this rather than hard-coding the limit so they stay in sync if the constant is ever tuned.
+
+```rust
+fn get_max_proof_len(env: Env) -> u32
+```
 
 ---
 

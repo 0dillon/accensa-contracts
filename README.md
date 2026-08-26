@@ -67,7 +67,11 @@ they were charged correctly, with no trusted API in the path.
 | `get_batch(batch_id) -> BatchRecord` | Reads an anchored batch. |
 | `get_batch_count() -> u64` | Returns the total number of anchored batches. Read-only. |
 | `get_max_batch_size() -> u32` | Returns `MAX_BATCH_SIZE` (currently 1000). Read-only; clients should discover the limit via this getter rather than hard-coding it. |
-| `verify_receipt(batch_id, leaf, proof) -> bool` | Verifies a receipt against the anchored root. Read-only, free to call. |
+| `verify_receipt(batch_id, leaf, proof) -> bool` | Verifies a receipt against the anchored root. Read-only, free to call. Returns `ProofTooLong` if the proof exceeds `MAX_PROOF_LEN` (10). |
+| `verify_receipt_by_root(root, leaf, proof) -> bool` | Verifies a receipt against any root in the historical ring buffer. Returns `ProofTooLong` if the proof exceeds `MAX_PROOF_LEN`. |
+| `get_root_buffer() -> Vec<BytesN<32>>` | Returns the current ring buffer of historical roots. Read-only. |
+| `get_root_buffer_size() -> u32` | Returns `ROOT_BUFFER_SIZE` (currently 100). Read-only. |
+| `get_max_proof_len() -> u32` | Returns `MAX_PROOF_LEN` (currently 10). Read-only; clients should discover the limit via this getter. |
 | `extend_batch_ttl(batch_id)` | Extends the TTL of a batch to prevent archival. Publicly callable. |
 | `prune_batches(before_ledger)` | Deletes anchored batches older than `before_ledger` to reclaim rent. Merchant auth required. |
 

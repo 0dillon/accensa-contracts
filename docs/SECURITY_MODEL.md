@@ -28,6 +28,7 @@ Users are untrusted. The contracts must assume any data submitted by users could
 ### Proof Forgery
 - **Threat:** An attacker tries to claim a refund for a non-existent or altered receipt.
 - **Mitigation:** The contract utilizes a sorted-pair Merkle tree. Every refund request requires a cryptographic inclusion proof that must perfectly resolve to the anchored root hash. Modifying the receipt or the proof will result in a mismatched root, causing the transaction to revert.
+- **Proof length bound:** `verify_receipt` and `verify_receipt_by_root` reject proofs longer than `MAX_PROOF_LEN` (derived from `MAX_BATCH_SIZE` via `⌈log₂(MAX_BATCH_SIZE)⌉`). A proof exceeding this bound is structurally impossible for any batch this contract could have anchored, so it is rejected with `ProofTooLong` rather than consuming resources hashing an invalid input.
 
 ### Window Expiry Evasion
 - **Threat:** An attacker attempts to process a refund after the designated refund window has expired.

@@ -603,3 +603,112 @@ fn test_existing_verify_receipt_still_works_with_buffer() {
     assert!(client.verify_receipt(&batch_id, &l1, &vec![&env, l2.clone()]));
     assert!(client.verify_receipt(&batch_id, &l2, &vec![&env, l1.clone()]));
 }
+
+// ---------------------------------------------------------------------------
+// Proof-length bounds tests
+// ---------------------------------------------------------------------------
+
+/// Build a chain-hash proof of `depth` siblings and the corresponding root.
+/// Each level pairs the current accumulator with a deterministic sibling,
+/// using the same sorted-pair SHA-256 the contract expects.
+fn build_chain_proof(env: &Env, leaf: &BytesN<32>, depth: u32) -> (BytesN<32>, Vec<BytesN<32>>) {
+    let mut proof = Vec::new(env);
+    let mut acc = leaf.clone();
+    for i in 0..depth {
+        let mut sibling_bytes = [0u8; 32];
+        sibling_bytes[0] = (i + 1) as u8;
+        let sibling = BytesN::from_array(env, &sibling_bytes);
+        acc = hash_pair(env, &acc, &sibling);
+        proof.push_back(sibling);
+    }
+    (acc, proof)
+}
+
+#[test]
+fn test_verify_receipt_empty_proof_succeeds() {
+    let (env, client, merchant) = setup();
+    client.initialize(&merchant);
+
+    // Single-leaf batch: root == leaf, empty proof.
+    let leaf = BytesN::from_array(&env, &[42u8; 32]);
+    let batch_id = client.anchor_batch(&leaf, &1, &0, &10);
+    assert!(client.verify_receipt(&batch_id, &leaf, &vec![&env]));
+}
+
+#[test]
+fn test_verify_receipt_at_bound_succeeds() {
+    let (env, client, merchant) = setup();
+    client.initialize(&merchant);
+
+    let leaf = BytesN::from_array(&env, &[7u8; 32]);
+    let (root, proof) = build_chain_proof(&env, &leaf, MAX_PROOF_LEN);
+
+    assert_eq!(proof.len(), MAX_PROOF_LEN);
+    let batch_id = client.anchor_batch(&root, &1000, &0, &1000);
+    assert!(client.verify_receipt(&batch_id, &leaf, &proof));
+}
+
+#[test]
+fn test_verify_receipt_one_over_bound_fails() {
+    let (env, client, merchant) = setup();
+    client.initialize(&merchant);
+
+    let leaf = BytesN::from_array(&env, &[7u8; 32]);
+    let (root, proof) = build_chain_proof(&env, &leaf, MAX_PROOF_LEN + 1);
+
+    assert_eq!(proof.len(), MAX_PROOF_LEN + 1);
+    let batch_id = client.anchor_batch(&root, &1000, &0, &1000);
+    assert_eq!(
+        client.try_verify_receipt(&batch_id, &leaf, &proof),
+        Err(Ok(Error::ProofTooLong))
+    );
+}
+
+#[test]
+fn test_verify_receipt_by_root_at_bound_succeeds() {
+    let (env, client, merchant) = setup();
+    client.initialize(&merchant);
+
+    let leaf = BytesN::from_array(&env, &[7u8; 32]);
+    let (root, proof) = build_chain_proof(&env, &leaf, MAX_PROOF_LEN);
+
+    client.anchor_batch(&root, &1000, &0, &1000);
+    assert!(client.verify_receipt_by_root(&root, &leaf, &proof));
+}
+
+#[test]
+fn test_verify_receipt_by_root_one_over_bound_fails() {
+    let (env, client, merchant) = setup();
+    client.initialize(&merchant);
+
+    let leaf = BytesN::from_array(&env, &[7u8; 32]);
+    let (root, proof) = build_chain_proof(&env, &leaf, MAX_PROOF_LEN + 1);
+
+    client.anchor_batch(&root, &1000, &0, &1000);
+    assert_eq!(
+        client.try_verify_receipt_by_root(&root, &leaf, &proof),
+        Err(Ok(Error::ProofTooLong))
+    );
+}
+
+#[test]
+fn test_verify_receipt_valid_deep_proof() {
+    let (env, client, merchant) = setup();
+    client.initialize(&merchant);
+
+    let leaf = BytesN::from_array(&env, &[5u8; 32]);
+    // Depth 5: well within the bound, still a meaningful proof.
+    let (root, proof) = build_chain_proof(&env, &leaf, 5);
+
+    assert_eq!(proof.len(), 5);
+    let batch_id = client.anchor_batch(&root, &32, &0, &32);
+    assert!(client.verify_receipt(&batch_id, &leaf, &proof));
+    assert!(client.verify_receipt_by_root(&root, &leaf, &proof));
+}
+
+#[test]
+fn test_get_max_proof_len() {
+    let (_env, client, _merchant) = setup();
+    assert_eq!(client.get_max_proof_len(), MAX_PROOF_LEN);
+    assert_eq!(client.get_max_proof_len(), 10);
+}

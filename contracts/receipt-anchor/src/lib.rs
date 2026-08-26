@@ -22,6 +22,7 @@ pub enum Error {
     BatchNotFound = 4,
     BatchTooLarge = 5,
     RootNotFound = 6,
+    ProofTooLong = 7,
 }
 
 #[contracttype]
@@ -75,6 +76,19 @@ const TTL_EXTEND: u32 = 518_400;
 const TTL_THRESHOLD: u32 = 100;
 
 const MAX_BATCH_SIZE: u32 = 1000;
+
+/// Maximum valid Merkle proof length, derived from MAX_BATCH_SIZE.
+/// A batch of N leaves produces a tree of depth ⌈log₂(N)⌉. For
+/// MAX_BATCH_SIZE = 1000, that is 10. Any proof longer is malformed.
+const MAX_PROOF_LEN: u32 = 10;
+
+// Compile-time assertion: MAX_PROOF_LEN must equal ⌈log₂(MAX_BATCH_SIZE)⌉.
+const _: () = assert!(
+    MAX_PROOF_LEN >= 1
+        && (1u32 << (MAX_PROOF_LEN - 1)) < MAX_BATCH_SIZE
+        && (1u32 << MAX_PROOF_LEN) >= MAX_BATCH_SIZE,
+    "MAX_PROOF_LEN must equal ⌈log₂(MAX_BATCH_SIZE)⌉; update together"
+);
 
 /// Maximum number of batches to delete in a single `prune_batches` call.
 /// Keeps per-transaction compute bounded; callers resume by invoking again
@@ -184,6 +198,9 @@ impl ReceiptAnchor {
         leaf: BytesN<32>,
         proof: Vec<BytesN<32>>,
     ) -> Result<bool, Error> {
+        if proof.len() > MAX_PROOF_LEN {
+            return Err(Error::ProofTooLong);
+        }
         let batch = Self::get_batch(env.clone(), batch_id)?;
         let mut computed_hash = leaf.to_array();
 
@@ -214,6 +231,9 @@ impl ReceiptAnchor {
         leaf: BytesN<32>,
         proof: Vec<BytesN<32>>,
     ) -> Result<bool, Error> {
+        if proof.len() > MAX_PROOF_LEN {
+            return Err(Error::ProofTooLong);
+        }
         let buffer: Vec<BytesN<32>> = env
             .storage()
             .instance()
@@ -277,6 +297,13 @@ impl ReceiptAnchor {
     /// in sync if the constant is ever tuned.
     pub fn get_max_batch_size(_env: Env) -> u32 {
         MAX_BATCH_SIZE
+    }
+
+    /// Returns the maximum valid Merkle proof length, derived from
+    /// `MAX_BATCH_SIZE`. Clients should call this rather than hard-coding
+    /// the limit so they stay in sync if the constant is ever tuned.
+    pub fn get_max_proof_len(_env: Env) -> u32 {
+        MAX_PROOF_LEN
     }
 
     pub fn extend_batch_ttl(env: Env, batch_id: u64) -> Result<(), Error> {

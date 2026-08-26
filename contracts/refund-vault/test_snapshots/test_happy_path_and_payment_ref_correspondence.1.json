@@ -403,6 +403,22 @@
                       "val": {
                         "u64": "1"
                       }
+                    },
+                    {
+                      "key": {
+                        "vec": [
+                          {
+                            "symbol": "RootBuffer"
+                          }
+                        ]
+                      },
+                      "val": {
+                        "vec": [
+                          {
+                            "bytes": "af0a68e2d2692b58ecda95051d5e7fe5dd3bc9f3d3f0b5260166565c694919f4"
+                          }
+                        ]
+                      }
                     }
                   ]
                 }
