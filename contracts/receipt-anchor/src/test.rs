@@ -573,3 +573,22 @@ fn test_anchor_and_prune_events_emitted() {
         ]
     );
 }
+
+/// The commit hash embedded via contractmeta must be real provenance, not the
+/// silent "unknown" fallback, in a normal repository build (see build.rs).
+#[test]
+fn test_commit_meta_is_well_formed() {
+    let sha = env!("GIT_SHA");
+    assert_ne!(sha, "unknown", "GIT_SHA must not fall back to 'unknown'");
+    assert_eq!(sha.len(), 40, "GIT_SHA should be 40 hex chars, got: {sha}");
+    assert!(
+        sha.bytes().all(|b| b.is_ascii_hexdigit()),
+        "GIT_SHA contains non-hex chars: {sha}"
+    );
+
+    let dirty = env!("GIT_DIRTY");
+    assert!(
+        dirty == "0" || dirty == "1",
+        "GIT_DIRTY must be '0' or '1', got: {dirty}"
+    );
+}

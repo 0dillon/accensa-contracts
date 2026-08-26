@@ -13,6 +13,7 @@ contractmeta!(
     val = "https://github.com/accensa/accensa-contracts"
 );
 contractmeta!(key = "commit", val = env!("GIT_SHA"));
+contractmeta!(key = "commit_dirty", val = env!("GIT_DIRTY"));
 
 #[contracttype]
 pub enum DataKey {
@@ -91,6 +92,42 @@ pub struct DepositEvent {
     #[topic]
     pub from: Address,
     pub amount: i128,
+}
+
+/// Emitted when the merchant pauses the vault, halting deposits, refunds and withdrawals.
+///
+/// Topics: `("pause_event", ledger)`. The ledger sequence lets an indexer
+/// reconstruct the pause window from the event log alone.
+#[contractevent]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PauseEvent {
+    #[topic]
+    pub ledger: u32,
+}
+
+/// Emitted when the merchant unpauses the vault.
+///
+/// Topics: `("unpause_event", ledger)`. Together with `PauseEvent` this
+/// brackets a pause window in the event log.
+#[contractevent]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct UnpauseEvent {
+    #[topic]
+    pub ledger: u32,
+}
+
+/// Emitted when the merchant changes the refund window.
+///
+/// Topics: `("refund_window_updated_event", previous_window, new_window)`.
+/// Both values are carried so a reader can tell whether a refund rejected at a
+/// given ledger was rejected under the old rule or the new one.
+#[contractevent]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RefundWindowUpdatedEvent {
+    #[topic]
+    pub previous_window: u32,
+    #[topic]
+    pub new_window: u32,
 }
 
 #[contractevent]
@@ -423,9 +460,20 @@ impl RefundVault {
             .ok_or(Error::NotInitialized)?;
         merchant.require_auth();
 
+        let previous: u32 = env
+            .storage()
+            .instance()
+            .get(&DataKey::RefundWindow)
+            .unwrap();
         env.storage()
             .instance()
             .set(&DataKey::RefundWindow, &ledgers);
+
+        RefundWindowUpdatedEvent {
+            previous_window: previous,
+            new_window: ledgers,
+        }
+        .publish(&env);
 
         env.storage()
             .instance()
@@ -772,6 +820,12 @@ impl RefundVault {
         merchant.require_auth();
 
         env.storage().instance().set(&DataKey::IsPaused, &true);
+
+        PauseEvent {
+            ledger: env.ledger().sequence(),
+        }
+        .publish(&env);
+
         env.storage()
             .instance()
             .extend_ttl(TTL_THRESHOLD, TTL_EXTEND);
@@ -787,6 +841,12 @@ impl RefundVault {
         merchant.require_auth();
 
         env.storage().instance().set(&DataKey::IsPaused, &false);
+
+        UnpauseEvent {
+            ledger: env.ledger().sequence(),
+        }
+        .publish(&env);
+
         env.storage()
             .instance()
             .extend_ttl(TTL_THRESHOLD, TTL_EXTEND);
@@ -883,4 +943,5 @@ impl RefundVault {
 
 mod fuzz_test;
 mod test;
+mod token_agnostic_tests;
 mod yield_tests;

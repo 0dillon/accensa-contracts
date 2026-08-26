@@ -69,7 +69,10 @@ The off-chain indexer service is responsible for aggregating receipts and comput
 ### 3. The User (Buyer)
 Users are untrusted. The contracts must assume any data submitted by users could be malicious and must validate all inputs (e.g., verifying amounts are greater than zero, verifying proofs).
 
-### 4. The Yield Strategy (optional, `main` only)
+### 4. Refund float ownership
+The float can only be funded by the merchant. `deposit` requires the depositor to be the merchant address (`from == merchant`, plus merchant auth); any other address is rejected with `Unauthorized`. This is a **deliberate guarantee**, not an implementation detail: the only funds ever at stake in the vault are the merchant's own, and a third party cannot contribute float — dust, unsolicited funding, or a top-up from a treasury contract — that the merchant has not authorised. `withdraw` is merchant-only for the same reason (it may send funds to any address the merchant chooses). A merchant who wants a finance key, treasury contract, or automated top-up to fund refunds must route those deposits through an address the merchant controls; the contract does not accept third-party funding by design.
+
+### 5. The Yield Strategy (optional, `main` only)
 The `RefundVault` yield integration (added after this document was first
 written; present on `main` but not on the `0.1.0` testnet deployment) introduces
 one additional trust assumption: funds deployed to a registered strategy are

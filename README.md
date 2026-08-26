@@ -122,6 +122,9 @@ Emits:
 | `DepositEvent` | `("deposit_event", from)` | `amount` |
 | `RefundEvent` | `("refund_event", payment_ref)` | `amount` (this call), `cumulative_refunded`, `recipient`, `ledger` |
 | `WithdrawEvent` | `("withdraw_event", to)` | `amount` |
+| `PauseEvent` | `("pause_event", ledger)` | — |
+| `UnpauseEvent` | `("unpause_event", ledger)` | — |
+| `RefundWindowUpdatedEvent` | `("refund_window_updated_event", previous_window, new_window)` | — |
 
 Each partial refund emits its own `RefundEvent` carrying **both** the amount for
 that call (`amount`) and the running total (`cumulative_refunded`), so an indexer
