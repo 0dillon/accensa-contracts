@@ -85,13 +85,36 @@ fn withdraw(env: Env, amount: i128, to: Address) -> Result<(), Error>
 - **Authentication:** Requires the merchant's signature.
 - **Errors:** `InsufficientFloat` if the vault balance is below `amount`.
 
-### `set_refund_window`
-Updates the refund window policy. Applies to all refunds executed after the change.
+### `propose_policy`
+Proposes a new refund window. The change is not applied immediately; the admin must call `execute_policy` after the timelock (17,280 ledgers, ~24 hours) has elapsed. Proposing a new policy overwrites any existing pending proposal.
 
 ```rust
-fn set_refund_window(env: Env, ledgers: u32) -> Result<(), Error>
+fn propose_policy(env: Env, ledgers: u32) -> Result<(), Error>
 ```
 - **Authentication:** Requires the merchant's signature.
+
+### `execute_policy`
+Executes a pending policy change. Fails if no policy is pending (`NoPendingPolicy`) or if the timelock has not yet expired (`TimelockNotExpired`).
+
+```rust
+fn execute_policy(env: Env) -> Result<(), Error>
+```
+- **Authentication:** Requires the merchant's signature.
+- **Errors:** `NoPendingPolicy` if no proposal exists, `TimelockNotExpired` if the timelock delay has not passed.
+
+### `get_pending_policy`
+Returns the current pending policy proposal, if any.
+
+```rust
+fn get_pending_policy(env: Env) -> Option<PolicyProposal>
+```
+
+### `get_policy_timelock`
+Returns the policy timelock delay in ledgers (read-only).
+
+```rust
+fn get_policy_timelock(env: Env) -> u32
+```
 
 ### `get_refund`
 Looks up the refund record for a payment reference, if one exists.

@@ -103,7 +103,10 @@ Holds merchant float and executes refunds bounded by an on-chain policy.
 | `deposit(from, amount)` | Merchant tops up float. |
 | `refund(payment_ref, recipient, amount, paid_at_ledger)` | Refunds a payment, subject to policy. |
 | `withdraw(amount, to)` | Merchant withdraws float. |
-| `set_refund_window(ledgers)` | Updates the window; `0` disables expiry. |
+| `propose_policy(ledgers)` | Proposes a new refund window; subject to timelock. |
+| `execute_policy()` | Executes a pending policy change after the timelock. |
+| `get_pending_policy()` | Returns the current pending policy proposal, if any. |
+| `get_policy_timelock()` | Returns the policy timelock delay in ledgers (read-only). |
 | `get_refund(payment_ref) -> Option<RefundRecord>` | Looks up a refund. |
 | `pause()` | Pauses operations for emergency stops. Merchant auth required. |
 | `unpause()` | Resumes paused operations. Merchant auth required. |

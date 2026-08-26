@@ -2,7 +2,7 @@
 
 use soroban_sdk::{
     contract, contracterror, contractevent, contractimpl, contractmeta, contracttype, token,
-    Address, BytesN, Env,
+    Address, BytesN, Env, IntoVal, Symbol,
 };
 
 contractmeta!(key = "name", val = "RefundVault");
@@ -34,6 +34,8 @@ pub enum Error {
     NothingToWithdraw = 16,
     NothingToHarvest = 17,
     InvalidRatio = 18,
+    NoPendingPolicy = 19,
+    TimelockNotExpired = 20,
 }
 
 #[contracttype]
@@ -53,6 +55,7 @@ pub enum DataKey {
     HarvestedYield,
     ReserveRatio,
     MaxDeployRatio,
+    PendingPolicy,
 }
 
 #[contracttype]
@@ -61,6 +64,14 @@ pub struct RefundRecord {
     pub amount: i128,
     pub recipient: Address,
     pub ledger: u32,
+}
+
+/// A pending policy change waiting for the timelock to expire.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PolicyProposal {
+    pub window: u32,
+    pub proposed_at_ledger: u32,
 }
 
 #[contracttype]
@@ -144,11 +155,26 @@ pub struct YieldHarvestedEvent {
     pub amount: i128,
 }
 
+#[contractevent]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PolicyProposedEvent {
+    #[topic]
+    pub window: u32,
+    pub proposed_at_ledger: u32,
+    pub execute_after_ledger: u32,
+}
+
+#[contractevent]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PolicyExecutedEvent {
+    #[topic]
+    pub window: u32,
+}
+
 /// Interface for external yield-generating strategies (e.g., Soroban lending protocols).
 ///
 /// Any contract that implements these methods can be registered as the vault's yield
 /// strategy. The vault calls these to deploy idle funds and harvest accrued yield.
-#[contractimpl]
 pub trait YieldStrategy {
     /// Deploy `amount` tokens into the strategy. The vault transfers tokens to the
     /// strategy contract before calling this.
@@ -170,12 +196,45 @@ pub trait YieldStrategy {
     fn accrued_yield(env: Env) -> i128;
 }
 
+/// Cross-contract client for calling yield strategy implementations.
+pub struct YieldStrategyClient<'a> {
+    env: &'a Env,
+    address: Address,
+}
+
+impl<'a> YieldStrategyClient<'a> {
+    pub fn new(env: &'a Env, address: &Address) -> Self {
+        Self {
+            env,
+            address: address.clone(),
+        }
+    }
+
+    pub fn withdraw(&self, principal: &i128) -> (i128, i128) {
+        self.env.invoke_contract(
+            &self.address,
+            &Symbol::new(self.env, "withdraw"),
+            (principal,).into_val(self.env),
+        )
+    }
+
+    pub fn harvest(&self) -> i128 {
+        self.env.invoke_contract(
+            &self.address,
+            &Symbol::new(self.env, "harvest"),
+            ().into_val(self.env),
+        )
+    }
+}
+
 /// Approximately 30 days of ledgers, assuming ~5 seconds per ledger.
 /// 60 * 60 * 24 * 30 / 5 = 518,400.
 /// This ensures refund records survive long-term audit use before requiring a TTL bump or restoration.
 const TTL_EXTEND: u32 = 518_400;
 /// The threshold before TTL is actually bumped, to prevent spamming updates on every call.
 const TTL_THRESHOLD: u32 = 100;
+/// Timelock delay for policy changes in ledgers (~24 hours at 5s/ledger).
+const POLICY_TIMELOCK: u32 = 17_280;
 
 #[contract]
 pub struct RefundVault;
@@ -372,7 +431,11 @@ impl RefundVault {
         Ok(())
     }
 
-    pub fn set_refund_window(env: Env, ledgers: u32) -> Result<(), Error> {
+    /// Propose a new refund window. The change is not applied immediately;
+    /// the admin must call `execute_policy` after the timelock (17,280 ledgers,
+    /// ~24 hours) has elapsed. Proposing a new policy overwrites any existing
+    /// pending proposal.
+    pub fn propose_policy(env: Env, ledgers: u32) -> Result<(), Error> {
         let merchant: Address = env
             .storage()
             .instance()
@@ -380,9 +443,59 @@ impl RefundVault {
             .ok_or(Error::NotInitialized)?;
         merchant.require_auth();
 
+        let current_ledger = env.ledger().sequence();
+        let proposal = PolicyProposal {
+            window: ledgers,
+            proposed_at_ledger: current_ledger,
+        };
+
         env.storage()
             .instance()
-            .set(&DataKey::RefundWindow, &ledgers);
+            .set(&DataKey::PendingPolicy, &proposal);
+
+        PolicyProposedEvent {
+            window: ledgers,
+            proposed_at_ledger: current_ledger,
+            execute_after_ledger: current_ledger + POLICY_TIMELOCK,
+        }
+        .publish(&env);
+
+        env.storage()
+            .instance()
+            .extend_ttl(TTL_THRESHOLD, TTL_EXTEND);
+        Ok(())
+    }
+
+    /// Execute a pending policy change. Fails if no policy is pending or if
+    /// the timelock has not yet expired.
+    pub fn execute_policy(env: Env) -> Result<(), Error> {
+        let merchant: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .ok_or(Error::NotInitialized)?;
+        merchant.require_auth();
+
+        let proposal: PolicyProposal = env
+            .storage()
+            .instance()
+            .get(&DataKey::PendingPolicy)
+            .ok_or(Error::NoPendingPolicy)?;
+
+        let current_ledger = env.ledger().sequence();
+        if current_ledger < proposal.proposed_at_ledger + POLICY_TIMELOCK {
+            return Err(Error::TimelockNotExpired);
+        }
+
+        env.storage()
+            .instance()
+            .set(&DataKey::RefundWindow, &proposal.window);
+        env.storage().instance().remove(&DataKey::PendingPolicy);
+
+        PolicyExecutedEvent {
+            window: proposal.window,
+        }
+        .publish(&env);
 
         env.storage()
             .instance()
@@ -394,6 +507,16 @@ impl RefundVault {
         env.storage()
             .persistent()
             .get(&DataKey::Refund(payment_ref))
+    }
+
+    /// Returns the current pending policy proposal, if any.
+    pub fn get_pending_policy(env: Env) -> Option<PolicyProposal> {
+        env.storage().instance().get(&DataKey::PendingPolicy)
+    }
+
+    /// Returns the policy timelock delay in ledgers (read-only).
+    pub fn get_policy_timelock() -> u32 {
+        POLICY_TIMELOCK
     }
 
     // ── Yield strategy management ──────────────────────────────────────────
@@ -548,11 +671,7 @@ impl RefundVault {
         }
 
         // Transfer tokens to strategy and record the deposit.
-        token_client.transfer(
-            &env.current_contract_address(),
-            &strategy,
-            &amount,
-        );
+        token_client.transfer(&env.current_contract_address(), &strategy, &amount);
 
         env.storage()
             .instance()
@@ -619,12 +738,10 @@ impl RefundVault {
             .get(&DataKey::HarvestedYield)
             .unwrap_or(0);
 
-        env.storage()
-            .instance()
-            .set(
-                &DataKey::DeployedPrincipal,
-                &(deployed - principal_returned),
-            );
+        env.storage().instance().set(
+            &DataKey::DeployedPrincipal,
+            &(deployed - principal_returned),
+        );
         env.storage()
             .instance()
             .set(&DataKey::HarvestedYield, &(harvested + yield_returned));
