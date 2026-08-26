@@ -15,11 +15,11 @@
 //! regression test (see the `regression` module at the bottom of this file).
 //!
 //! The test maintains its own `Model` of deposits, refunds, withdrawals,
-//! paused state, refund window, and which `payment_ref`s have been refunded.
-//! The invariants are checked against observable contract state — the vault's
-//! token balance, `get_refund` records, and the error returned by each
-//! rejected call — so the model is a conformance oracle, not a restatement of
-//! the contract's internals.
+//! paused state, refund window, and per-`payment_ref` cumulative refunds and
+//! ceilings. The invariants are checked against observable contract state —
+//! the vault's token balance, `get_refund` records, and the error returned by
+//! each rejected call — so the model is a conformance oracle, not a
+//! restatement of the contract's internals.
 //!
 //! ## Budget knobs
 //!
@@ -133,8 +133,11 @@ struct Model {
     deposits: i128,
     refunds: i128,
     withdrawals: i128,
-    /// Refunded amount per payment-ref slot (None = never refunded).
-    refunded: [Option<i128>; REF_SLOTS as usize],
+    /// Per payment-ref slot: (cumulative refunded, ceiling). `None` = never
+    /// refunded. The ceiling is fixed by the first partial and never changes,
+    /// mirroring the contract (later calls' `payment_amount` is ignored once a
+    /// record exists).
+    refunded: [Option<(i128, i128)>; REF_SLOTS as usize],
     paused: bool,
     window: u32,
 }
@@ -172,6 +175,7 @@ enum Op {
         slot: u32,
         amount: i128,
         paid_at_ledger: u32,
+        payment_amount: i128,
     },
     Withdraw {
         amount: i128,
@@ -195,13 +199,20 @@ fn amount_strategy() -> impl Strategy<Value = i128> {
 fn op_strategy() -> impl Strategy<Value = Op> {
     prop_oneof![
         amount_strategy().prop_map(|amount| Op::Deposit { amount }),
-        (0u32..REF_SLOTS, amount_strategy(), 0u32..=1_000_000u32).prop_map(
-            |(slot, amount, paid_at_ledger)| Op::Refund {
-                slot,
-                amount,
-                paid_at_ledger,
-            }
-        ),
+        (
+            0u32..REF_SLOTS,
+            amount_strategy(),
+            0u32..=1_000_000u32,
+            amount_strategy()
+        )
+            .prop_map(
+                |(slot, amount, paid_at_ledger, payment_amount)| Op::Refund {
+                    slot,
+                    amount,
+                    paid_at_ledger,
+                    payment_amount,
+                }
+            ),
         amount_strategy().prop_map(|amount| Op::Withdraw { amount }),
         (0u32..=5_000u32).prop_map(|window| Op::SetWindow { window }),
         Just(Op::TogglePause),
@@ -287,18 +298,22 @@ fn execute(
                 slot,
                 amount,
                 paid_at_ledger,
+                payment_amount,
             } => {
                 let idx = *slot as usize;
                 let before = balance();
-                let res =
-                    client.try_refund(&payment_ref(env, *slot), merchant, amount, paid_at_ledger);
+                let res = client.try_refund(
+                    &payment_ref(env, *slot),
+                    merchant,
+                    amount,
+                    paid_at_ledger,
+                    payment_amount,
+                );
+                // The ceiling is fixed by the first partial for this slot.
+                let (cumulative, ceiling) = model.refunded[idx].unwrap_or((0, *payment_amount));
                 match res {
                     Ok(Ok(())) => {
-                        if model.refunded[idx].is_some() {
-                            failures.push(format!(
-                                "refund of already-refunded slot {slot} succeeded (double refund)"
-                            ));
-                        } else if *amount <= 0 {
+                        if *amount <= 0 {
                             failures
                                 .push(format!("refund of {amount} succeeded but must be invalid"));
                         } else if model.window > 0
@@ -309,6 +324,12 @@ fn execute(
                                 env.ledger().sequence(),
                                 model.window
                             ));
+                        } else if cumulative.checked_add(*amount).is_none()
+                            || cumulative + *amount > ceiling
+                        {
+                            failures.push(format!(
+                                "refund of {amount} succeeded past the ceiling {ceiling} "
+                            ));
                         } else if *amount > model.float() {
                             failures.push(format!(
                                 "refund of {amount} succeeded beyond float {}",
@@ -316,7 +337,7 @@ fn execute(
                             ));
                         } else {
                             model.refunds += *amount;
-                            model.refunded[idx] = Some(*amount);
+                            model.refunded[idx] = Some((cumulative + *amount, ceiling));
                         }
                     }
                     Err(Ok(Error::Paused)) => {
@@ -324,10 +345,15 @@ fn execute(
                             failures.push("refund returned Paused while unpaused".to_string());
                         }
                     }
-                    Err(Ok(Error::AlreadyRefunded)) => {
-                        if model.refunded[idx].is_none() {
+                    Err(Ok(Error::ExceedsPayment)) => {
+                        // Rejected because cumulative + amount would exceed the
+                        // ceiling (a zero/negative ceiling rejects everything).
+                        let over_ceiling = cumulative.checked_add(*amount).is_none()
+                            || cumulative + *amount > ceiling;
+                        if !over_ceiling {
                             failures.push(format!(
-                                "refund of slot {slot} rejected as AlreadyRefunded but never refunded"
+                                "refund of slot {slot} rejected as ExceedsPayment but cumulative \
+                                 {cumulative} + {amount} <= ceiling {ceiling}"
                             ));
                         }
                     }
@@ -379,14 +405,20 @@ fn execute(
                     failures.push(format!("float went negative: {}", balance()));
                 }
                 // get_refund conformance: the record exists iff the slot was
-                // refunded, and its amount matches.
+                // refunded, and its cumulative amount and ceiling match.
                 let record = client.get_refund(&payment_ref(env, *slot));
                 match (record, model.refunded[idx]) {
-                    (Some(r), Some(amt)) => {
-                        if r.amount != amt {
+                    (Some(r), Some((cum, ceiling))) => {
+                        if r.amount_refunded != cum {
                             failures.push(format!(
-                                "get_refund amount {} != modelled {} for slot {slot}",
-                                r.amount, amt
+                                "get_refund cumulative {} != modelled {cum} for slot {slot}",
+                                r.amount_refunded
+                            ));
+                        }
+                        if r.payment_amount != ceiling {
+                            failures.push(format!(
+                                "get_refund ceiling {} != modelled {ceiling} for slot {slot}",
+                                r.payment_amount
                             ));
                         }
                     }
@@ -480,13 +512,13 @@ fn execute(
                     let ttl_before = env.as_contract(&client.address, || {
                         env.storage()
                             .persistent()
-                            .get_ttl(&DataKey::Refund(ref_.clone()))
+                            .get_ttl(&DataKey::RefundV2(ref_.clone()))
                     });
                     client.extend_refund_ttl(&ref_);
                     let ttl_after = env.as_contract(&client.address, || {
                         env.storage()
                             .persistent()
-                            .get_ttl(&DataKey::Refund(ref_.clone()))
+                            .get_ttl(&DataKey::RefundV2(ref_.clone()))
                     });
                     if ttl_after < ttl_before {
                         failures.push(format!(
@@ -524,17 +556,18 @@ proptest! {
 proptest! {
     #![proptest_config(proptest_config(fuzz_cases()))]
 
-    /// A payment_ref is refundable at most once under any interleaving of
-    /// deposits, withdrawals, window changes and pause toggles.
+    /// Cumulative refunds per payment_ref never exceed the first-supplied
+    /// ceiling, under any interleaving of deposits, withdrawals, window
+    /// changes and pause toggles.
     #[test]
-    fn test_fuzz_refund_at_most_once(
+    fn test_fuzz_refund_ceiling_respected(
         ops in proptest::collection::vec(op_strategy(), 0..=fuzz_seq_len()),
     ) {
         let (env, client, merchant, token) = setup(100);
         let failures = execute(&env, &client, &merchant, &token, &ops);
         assert!(
             failures.is_empty(),
-            "double-refund invariants violated:\n{}",
+            "refund-ceiling invariants violated:\n{}",
             failures.join("\n")
         );
     }
@@ -574,7 +607,7 @@ proptest! {
         client.deposit(&merchant, &1_000_000);
         let buyer = Address::generate(&env);
         let ref_ = payment_ref(&env, 0);
-        client.refund(&ref_, &buyer, &100_000, &0);
+        client.refund(&ref_, &buyer, &100_000, &0, &100_000);
 
         // Extension on a record that does not exist errors. Slot 0 is the
         // refunded one, so pick a guaranteed-distinct slot (1..REF_SLOTS).
@@ -589,11 +622,15 @@ proptest! {
         for advance in advances {
             env.ledger().with_mut(|li| li.sequence_number += advance);
             let ttl_before = env.as_contract(&client.address, || {
-                env.storage().persistent().get_ttl(&DataKey::Refund(ref_.clone()))
+                env.storage()
+                    .persistent()
+                    .get_ttl(&DataKey::RefundV2(ref_.clone()))
             });
             client.extend_refund_ttl(&ref_);
             let ttl_after = env.as_contract(&client.address, || {
-                env.storage().persistent().get_ttl(&DataKey::Refund(ref_.clone()))
+                env.storage()
+                    .persistent()
+                    .get_ttl(&DataKey::RefundV2(ref_.clone()))
             });
             assert!(
                 ttl_after >= ttl_before,
@@ -670,16 +707,17 @@ fn test_regression_float_accounts_across_full_cycle() {
 
     let ref_a = payment_ref(&env, 0);
     let buyer = Address::generate(&env);
-    client.refund(&ref_a, &buyer, &400_000, &0);
+    client.refund(&ref_a, &buyer, &400_000, &0, &400_000);
     assert_eq!(token_client.balance(&client.address), 2_600_000);
 
     client.withdraw(&500_000, &merchant);
     assert_eq!(token_client.balance(&client.address), 2_100_000);
 
-    // The double-refund guard holds even after other activity.
+    // The ceiling guard holds even after other activity: cumulative 400_000
+    // + 100 would exceed the 400_000 ceiling.
     assert_eq!(
-        client.try_refund(&ref_a, &buyer, &100, &0),
-        Err(Ok(Error::AlreadyRefunded))
+        client.try_refund(&ref_a, &buyer, &100, &0, &400_000),
+        Err(Ok(Error::ExceedsPayment))
     );
     assert_eq!(token_client.balance(&client.address), 2_100_000);
 }
@@ -698,13 +736,13 @@ fn test_regression_pause_blocks_and_preserves_state() {
     let buyer = Address::generate(&env);
     let ref_ = payment_ref(&env, 1);
     assert_eq!(
-        client.try_refund(&ref_, &buyer, &100, &0),
+        client.try_refund(&ref_, &buyer, &100, &0, &100),
         Err(Ok(Error::Paused))
     );
     assert!(client.get_refund(&ref_).is_none());
     assert_eq!(token_client.balance(&client.address), 1_000_000);
 
     client.unpause();
-    client.refund(&ref_, &buyer, &100, &0);
+    client.refund(&ref_, &buyer, &100, &0, &100);
     assert_eq!(token_client.balance(&client.address), 999_900);
 }

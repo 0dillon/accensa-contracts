@@ -1,8 +1,9 @@
 #![no_std]
 
+use accensa_common::Error;
 use soroban_sdk::{
-    contract, contractclient, contracterror, contractevent, contractimpl, contractmeta,
-    contracttype, Address, BytesN, Env, InvokeError, Vec,
+    contract, contractclient, contractevent, contractimpl, contractmeta, contracttype, Address,
+    BytesN, Env, InvokeError, Vec,
 };
 
 contractmeta!(key = "name", val = "ReceiptAnchor");
@@ -12,20 +13,6 @@ contractmeta!(
     val = "https://github.com/accensa/accensa-contracts"
 );
 contractmeta!(key = "commit", val = env!("GIT_SHA"));
-
-#[contracterror]
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
-pub enum Error {
-    AlreadyInitialized = 1,
-    NotInitialized = 2,
-    Unauthorized = 3,
-    BatchNotFound = 4,
-    BatchTooLarge = 5,
-    /// A shard call returned something other than the expected value shape —
-    /// covers a wasm-level invocation failure or a value that failed to
-    /// decode. Distinct from `BatchNotFound`, which a shard returns deliberately.
-    ShardCallFailed = 6,
-}
 
 #[contracttype]
 pub enum DataKey {

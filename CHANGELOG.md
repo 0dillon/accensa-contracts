@@ -6,7 +6,42 @@ The two contracts are versioned together and share a tag. Versioning follows the
 policy in [`docs/RELEASING.md`](docs/RELEASING.md): while the project is pre-1.0,
 breaking changes bump the **minor** version, and they are called out as such.
 
-## [Unreleased]
+## [0.3.0] — 2026-08-26
+
+### ⚠️ Breaking
+
+- **`refund` gained a required `payment_amount` argument** (issue #99). Refunds
+  are now cumulative: each call adds `amount` to a running total for the
+  `payment_ref`, and the total can never exceed the `payment_amount` ceiling.
+  The refund window is still measured from `paid_at_ledger`, never from a
+  partial.
+- **`RefundRecord` layout changed and is stored under a new key.** The single
+  `amount` field is replaced by `amount_refunded` + `payment_amount`, and
+  records are stored under a new `RefundV2` storage key. A `Refund` key written
+  by the 0.2.0 single-refund rule is still recognised and treated as a
+  fully-refunded payment (rejected with `ExceedsPayment`), never mis-decoded.
+- **Error codes are unified across both contracts** (issue #98). Both contracts
+  now return the single `accensa-common` `Error` enum; the two codes that used
+  to collide (`AlreadyInitialized`, `NotInitialized`) keep their original
+  values, and the anchor-only codes moved to a dedicated block (100+) so no two
+  variants overlap. See the error table in the README.
+
+### Added
+
+`RefundVault`:
+
+- **Partial refunds** — a payment may be refunded across multiple calls, each
+  emitting a `RefundEvent` carrying both the per-call amount and the cumulative
+  total, so an indexer never has to sum history.
+- **Multisig contract-account admin support is verified and documented** (issue
+  #97). Tests prove both contracts work with a `__check_auth` contract account
+  as merchant — see `contracts/multisig-account`,
+  `contracts/refund-vault/tests/multisig_admin_vault.rs` and
+  `contracts/receipt-anchor/tests/multisig_admin_anchor.rs`.
+- **Tests for the two README cross-contract claims** (issue #163):
+  `readme_claim_payment_ref_is_receipt_leaf` and
+  `readme_claim_refunds_outlive_pruned_batches` in
+  `contracts/refund-vault/tests/integration_test.rs`.
 
 ### Added
 
@@ -33,13 +68,18 @@ breaking changes bump the **minor** version, and they are called out as such.
   stays a contiguous prefix with a monotonic `PrunedUpTo` cursor, Merkle
   verification rejects every wrong proof shape (wrong leaf/sibling/length/batch
   and reversed level order), vault float always equals
-  `deposits - refunds - withdrawals` and never goes negative, a `payment_ref`
-  can never be refunded twice, paused operations never mutate state, and TTL
-  extension never shortens a TTL while missing records always error. Budgets
+  `deposits - refunds - withdrawals` and never goes negative, cumulative
+  refunds per `payment_ref` never exceed the supplied ceiling, paused
+  operations never mutate state, and TTL extension never shortens a TTL while
+  missing records always error. Budgets
   are tunable via `FUZZ_CASES`/`FUZZ_SEQ_LEN` with longer `#[ignore]`d local
   profiles.
 
-## [0.3.0] — 2026-08-26
+### Deployment status
+
+Like `0.2.0`, this is a source release: the live testnet addresses in
+[`DEPLOYMENTS.md`](DEPLOYMENTS.md) still run `0.1.0`, and the new `refund`
+signature, event shapes and error codes **do not exist at those addresses**.
 
 ## [0.2.0] — 2026-08-14
 
@@ -155,5 +195,6 @@ First testnet deployment. `ReceiptAnchor` with `anchor_batch`, `get_batch`,
 the transactions that created them are recorded in
 [`DEPLOYMENTS.md`](DEPLOYMENTS.md).
 
+[0.3.0]: https://github.com/accensa/accensa-contracts/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/accensa/accensa-contracts/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/accensa/accensa-contracts/releases/tag/v0.1.0

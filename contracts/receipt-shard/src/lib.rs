@@ -9,9 +9,8 @@
 //! shard never re-derives or second-guesses routing decisions; it only
 //! enforces that writes land inside its own assigned range.
 
-use soroban_sdk::{
-    contract, contracterror, contractimpl, contractmeta, contracttype, Address, BytesN, Env, Vec,
-};
+use accensa_common::Error;
+use soroban_sdk::{contract, contractimpl, contractmeta, contracttype, Address, BytesN, Env, Vec};
 
 contractmeta!(key = "name", val = "ReceiptShard");
 contractmeta!(key = "version", val = env!("CARGO_PKG_VERSION"));
@@ -20,14 +19,6 @@ contractmeta!(
     val = "https://github.com/accensa/accensa-contracts"
 );
 contractmeta!(key = "commit", val = env!("GIT_SHA"));
-
-#[contracterror]
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
-pub enum Error {
-    // Shares the discriminant with `ReceiptAnchor::Error::BatchNotFound` so the
-    // router can decode a shard's error code with its own `Error` type.
-    BatchNotFound = 4,
-}
 
 #[contracttype]
 pub enum DataKey {

@@ -275,6 +275,7 @@ fn test_set_yield_strategy_requires_auth() {
     let (env, vault_client, _merchant, _token, _strategy, _tc) = setup_with_strategy(2000, 8000);
     let new_strategy = Address::generate(&env);
 
+    // No signatures: merchant.require_auth() must abort.
     env.set_auths(&[]);
     // `merchant.require_auth()` aborts rather than returning an error, so the
     // call is caught by the client as a host error, not `Unauthorized`.
@@ -595,7 +596,7 @@ fn test_refund_succeeds_after_deploy_within_reserve() {
     // Refund from liquid balance.
     let payment_ref = BytesN::from_array(&env, &[1u8; 32]);
     let buyer = Address::generate(&env);
-    vault_client.refund(&payment_ref, &buyer, &500_000, &0);
+    vault_client.refund(&payment_ref, &buyer, &500_000, &0, &500_000);
 
     assert_eq!(tc.balance(&buyer), 500_000);
     assert_eq!(tc.balance(&vault_client.address), 1_500_000);
@@ -611,8 +612,10 @@ fn test_refund_exceeding_liquid_after_deploy_fails() {
     // Try to refund 2.5M — exceeds liquid balance.
     let payment_ref = BytesN::from_array(&env, &[2u8; 32]);
     let buyer = Address::generate(&env);
+    // payment_amount >= amount so the ceiling check passes and the float
+    // shortage (2M liquid < 2.5M) is what gets reported.
     assert_eq!(
-        vault_client.try_refund(&payment_ref, &buyer, &2_500_000, &0),
+        vault_client.try_refund(&payment_ref, &buyer, &2_500_000, &0, &2_500_000),
         Err(Ok(Error::InsufficientFloat))
     );
 }
@@ -629,7 +632,7 @@ fn test_refund_after_withdraw_from_yield() {
 
     let payment_ref = BytesN::from_array(&env, &[3u8; 32]);
     let buyer = Address::generate(&env);
-    vault_client.refund(&payment_ref, &buyer, &2_500_000, &0);
+    vault_client.refund(&payment_ref, &buyer, &2_500_000, &0, &2_500_000);
 
     assert_eq!(tc.balance(&buyer), 2_500_000);
 }
@@ -842,7 +845,7 @@ fn test_existing_deposit_refund_withdraw_still_works() {
 
     let payment_ref = BytesN::from_array(&env, &[7u8; 32]);
     let buyer = Address::generate(&env);
-    vault_client.refund(&payment_ref, &buyer, &120_000, &0);
+    vault_client.refund(&payment_ref, &buyer, &120_000, &0, &120_000);
 
     let tc = TokenClient::new(&env, &token);
     assert_eq!(tc.balance(&buyer), 120_000);

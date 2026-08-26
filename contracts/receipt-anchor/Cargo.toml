@@ -12,8 +12,10 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 soroban-sdk = { workspace = true }
+accensa-common = { workspace = true }
 
 [dev-dependencies]
+multisig-account = { path = "../multisig-account", features = ["testutils"] }
 proptest = "1.4"
 soroban-sdk = { workspace = true, features = ["testutils"] }
 # Test-only: lets fuzz_test.rs peek at a shard's own storage (e.g. TTLs) by
