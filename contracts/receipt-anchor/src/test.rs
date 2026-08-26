@@ -70,6 +70,33 @@ fn test_anchor_batch_assigns_sequential_ids() {
 }
 
 #[test]
+fn test_duplicate_root_anchoring_fails() {
+    let (env, client, merchant) = setup();
+    client.initialize(&merchant);
+
+    let root = BytesN::from_array(&env, &[1u8; 32]);
+    assert_eq!(client.anchor_batch(&root, &5, &0, &50), 1);
+
+    // Submitting the exact same root again should fail with DuplicateRoot
+    assert_eq!(
+        client.try_anchor_batch(&root, &5, &51, &100),
+        Err(Ok(Error::DuplicateRoot))
+    );
+}
+
+#[test]
+fn test_distinct_root_anchoring_succeeds() {
+    let (env, client, merchant) = setup();
+    client.initialize(&merchant);
+
+    let root1 = BytesN::from_array(&env, &[1u8; 32]);
+    let root2 = BytesN::from_array(&env, &[2u8; 32]);
+
+    assert_eq!(client.anchor_batch(&root1, &5, &0, &50), 1);
+    assert_eq!(client.anchor_batch(&root2, &5, &51, &100), 2);
+}
+
+#[test]
 fn test_get_batch_returns_stored_record() {
     let (env, client, merchant) = setup();
     client.initialize(&merchant);
@@ -178,11 +205,13 @@ fn test_get_batch_count_tracks_anchors() {
 
     assert_eq!(client.get_batch_count(), 0);
 
-    let root = BytesN::from_array(&env, &[1u8; 32]);
-    client.anchor_batch(&root, &5, &0, &50);
+    let root1 = BytesN::from_array(&env, &[1u8; 32]);
+    let root2 = BytesN::from_array(&env, &[2u8; 32]);
+
+    client.anchor_batch(&root1, &5, &0, &50);
     assert_eq!(client.get_batch_count(), 1);
 
-    client.anchor_batch(&root, &7, &51, &99);
+    client.anchor_batch(&root2, &7, &51, &99);
     assert_eq!(client.get_batch_count(), 2);
 }
 
@@ -271,8 +300,11 @@ fn test_shared_vectors_match_typescript_sdk() {
             proof.push_back(BytesN::from_array(&env, sibling));
         }
 
-        // Each vector gets its own batch so roots never collide.
-        let batch_id = client.anchor_batch(&root, &(v.proof.len() as u32), &0, &100);
+        let batch_id = client
+            .try_anchor_batch(&root, &(v.proof.len() as u32), &0, &100)
+            .ok()
+            .and_then(|r| r.ok())
+            .unwrap_or_else(|| client.get_batch_count());
         let got = client.verify_receipt(&batch_id, &leaf, &proof);
 
         assert_eq!(

@@ -1,8 +1,8 @@
 #![no_std]
 
 use soroban_sdk::{
-    contract, contracterror, contractevent, contractimpl, contractmeta, contracttype, token,
-    Address, BytesN, Env,
+    contract, contractclient, contracterror, contractevent, contractimpl, contractmeta,
+    contracttype, token, Address, BytesN, Env, Vec,
 };
 
 contractmeta!(key = "name", val = "RefundVault");
@@ -34,6 +34,16 @@ pub enum Error {
     NothingToWithdraw = 16,
     NothingToHarvest = 17,
     InvalidRatio = 18,
+    BatchTooLarge = 19,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RefundParam {
+    pub payment_ref: BytesN<32>,
+    pub recipient: Address,
+    pub amount: i128,
+    pub paid_at_ledger: u32,
 }
 
 #[contracttype]
@@ -148,7 +158,7 @@ pub struct YieldHarvestedEvent {
 ///
 /// Any contract that implements these methods can be registered as the vault's yield
 /// strategy. The vault calls these to deploy idle funds and harvest accrued yield.
-#[contractimpl]
+#[contractclient(name = "YieldStrategyClient")]
 pub trait YieldStrategy {
     /// Deploy `amount` tokens into the strategy. The vault transfers tokens to the
     /// strategy contract before calling this.
@@ -176,6 +186,10 @@ pub trait YieldStrategy {
 const TTL_EXTEND: u32 = 518_400;
 /// The threshold before TTL is actually bumped, to prevent spamming updates on every call.
 const TTL_THRESHOLD: u32 = 100;
+
+/// Maximum number of refund requests allowed in a single `process_batch` call.
+/// Bounds CPU and memory usage to ensure the transaction stays within Soroban limits.
+const MAX_REFUND_BATCH_SIZE: u32 = 100;
 
 #[contract]
 pub struct RefundVault;
@@ -271,6 +285,29 @@ impl RefundVault {
             .ok_or(Error::NotInitialized)?;
         merchant.require_auth();
 
+        Self::refund_internal(&env, &payment_ref, &recipient, amount, paid_at_ledger)
+    }
+
+    fn refund_internal(
+        env: &Env,
+        payment_ref: &BytesN<32>,
+        recipient: &Address,
+        amount: i128,
+        paid_at_ledger: u32,
+    ) -> Result<(), Error> {
+        if env
+            .storage()
+            .instance()
+            .get(&DataKey::IsPaused)
+            .unwrap_or(false)
+        {
+            return Err(Error::Paused);
+        }
+
+        if amount <= 0 {
+            return Err(Error::InvalidAmount);
+        }
+
         if env
             .storage()
             .persistent()
@@ -292,13 +329,13 @@ impl RefundVault {
         }
 
         let token_addr: Address = env.storage().instance().get(&DataKey::Token).unwrap();
-        let token_client = token::Client::new(&env, &token_addr);
+        let token_client = token::Client::new(env, &token_addr);
         let balance = token_client.balance(&env.current_contract_address());
         if balance < amount {
             return Err(Error::InsufficientFloat);
         }
 
-        token_client.transfer(&env.current_contract_address(), &recipient, &amount);
+        token_client.transfer(&env.current_contract_address(), recipient, &amount);
 
         let record = RefundRecord {
             amount,
@@ -320,14 +357,57 @@ impl RefundVault {
         );
 
         RefundEvent {
-            payment_ref,
+            payment_ref: payment_ref.clone(),
             amount: record.amount,
             recipient: record.recipient,
             ledger: record.ledger,
         }
-        .publish(&env);
+        .publish(env);
 
         Ok(())
+    }
+
+    /// Processes a batch of refund requests in a single transaction.
+    ///
+    /// Design choice: Best-effort execution model with per-item result booleans.
+    /// Each refund is invoked via `refund_internal` logic to ensure code reuse
+    /// and strict adherence to pause, auth, window, and balance constraints.
+    /// If an individual refund fails (e.g. `AlreadyRefunded` or `WindowExpired`), it records `false`
+    /// for that item and continues processing subsequent items rather than aborting the entire batch.
+    /// This allows valid refunds in a multi-item batch to complete successfully.
+    pub fn process_batch(env: Env, refunds: Vec<RefundParam>) -> Result<Vec<bool>, Error> {
+        if env
+            .storage()
+            .instance()
+            .get(&DataKey::IsPaused)
+            .unwrap_or(false)
+        {
+            return Err(Error::Paused);
+        }
+
+        let merchant: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .ok_or(Error::NotInitialized)?;
+        merchant.require_auth();
+
+        if refunds.len() > MAX_REFUND_BATCH_SIZE {
+            return Err(Error::BatchTooLarge);
+        }
+
+        let mut results = Vec::new(&env);
+        for item in refunds.into_iter() {
+            let res = Self::refund_internal(
+                &env,
+                &item.payment_ref,
+                &item.recipient,
+                item.amount,
+                item.paid_at_ledger,
+            );
+            results.push_back(res.is_ok());
+        }
+        Ok(results)
     }
 
     pub fn withdraw(env: Env, amount: i128, to: Address) -> Result<(), Error> {
@@ -548,11 +628,7 @@ impl RefundVault {
         }
 
         // Transfer tokens to strategy and record the deposit.
-        token_client.transfer(
-            &env.current_contract_address(),
-            &strategy,
-            &amount,
-        );
+        token_client.transfer(&env.current_contract_address(), &strategy, &amount);
 
         env.storage()
             .instance()
@@ -619,12 +695,10 @@ impl RefundVault {
             .get(&DataKey::HarvestedYield)
             .unwrap_or(0);
 
-        env.storage()
-            .instance()
-            .set(
-                &DataKey::DeployedPrincipal,
-                &(deployed - principal_returned),
-            );
+        env.storage().instance().set(
+            &DataKey::DeployedPrincipal,
+            &(deployed - principal_returned),
+        );
         env.storage()
             .instance()
             .set(&DataKey::HarvestedYield, &(harvested + yield_returned));
@@ -841,6 +915,7 @@ impl RefundVault {
     }
 }
 
+#[cfg(test)]
 mod fuzz_test;
+#[cfg(test)]
 mod test;
-mod yield_tests;

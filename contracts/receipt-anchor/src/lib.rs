@@ -21,6 +21,7 @@ pub enum Error {
     Unauthorized = 3,
     BatchNotFound = 4,
     BatchTooLarge = 5,
+    DuplicateRoot = 6,
 }
 
 #[contracttype]
@@ -116,6 +117,13 @@ impl ReceiptAnchor {
         merchant.require_auth();
 
         let mut batch_id: u64 = env.storage().instance().get(&DataKey::BatchCount).unwrap();
+        if batch_id > 0 {
+            if let Ok(last_batch) = Self::get_batch(env.clone(), batch_id) {
+                if last_batch.root == root {
+                    return Err(Error::DuplicateRoot);
+                }
+            }
+        }
         batch_id += 1;
 
         let record = BatchRecord {
@@ -276,5 +284,7 @@ impl ReceiptAnchor {
     }
 }
 
+#[cfg(test)]
 mod fuzz_test;
+#[cfg(test)]
 mod test;

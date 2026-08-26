@@ -37,6 +37,13 @@ Users are untrusted. The contracts must assume any data submitted by users could
 - **Threat:** An attacker tries to refund a negative amount to cause an underflow or steal funds.
 - **Mitigation:** Explicit validation ensures that the `amount` is strictly greater than zero (`InvalidAmount` error) before executing token transfers, preventing unintended arithmetic behaviors or logical exploits.
 
+## Balance Invariants
+
+### RefundVault Token Balance Invariant (#94)
+- **Invariant:** The total internal token balance of `RefundVault` MUST at all times equal total merchant deposits minus total processed refunds minus total merchant withdrawals:
+  `Token Balance == Net Deposits - Total Refunds - Total Withdrawals`
+- **Verification:** Property-based/fuzz tests (`test_fuzz_refund_vault_balance_invariant` in `contracts/refund-vault/src/fuzz_test.rs`) continuously verify this invariant across randomized series of deposits, refunds, and withdrawals.
+
 ## Storage Security
 
 For details on how storage archival and persistence affect the security model (such as preventing replay attacks via persistent tombstoning), see the [Storage Audit](storage-audit.md).
