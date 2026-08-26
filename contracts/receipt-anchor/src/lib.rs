@@ -1,8 +1,8 @@
 #![no_std]
 
+use accensa_common::Error;
 use soroban_sdk::{
-    contract, contracterror, contractevent, contractimpl, contractmeta, contracttype, Address,
-    BytesN, Env, Vec,
+    contract, contractevent, contractimpl, contractmeta, contracttype, Address, BytesN, Env, Vec,
 };
 
 contractmeta!(key = "name", val = "ReceiptAnchor");
@@ -12,16 +12,6 @@ contractmeta!(
     val = "https://github.com/accensa/accensa-contracts"
 );
 contractmeta!(key = "commit", val = env!("GIT_SHA"));
-
-#[contracterror]
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
-pub enum Error {
-    AlreadyInitialized = 1,
-    NotInitialized = 2,
-    Unauthorized = 3,
-    BatchNotFound = 4,
-    BatchTooLarge = 5,
-}
 
 #[contracttype]
 pub enum DataKey {

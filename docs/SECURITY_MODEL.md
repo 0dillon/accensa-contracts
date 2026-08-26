@@ -29,6 +29,34 @@ The admin is assumed to be a trusted entity in the context of configuring the co
 - Authorizing deposits and legitimate configuration changes.
 If the admin's private key is compromised, the attacker could drain the vault's float or block refunds.
 
+**The admin may be any `Address`, including a contract account.** On Soroban an
+`Address` is not required to be a keypair — it can be a contract that implements
+`__check_auth`, and `require_auth()` invokes that implementation. Both contracts
+store a single `Address` as `Admin` and put no constraint on what it is, so a
+`RefundVault` or `ReceiptAnchor` initialised with a multisig contract account as
+its merchant already requires that account's threshold of signers for `pause`,
+`unpause`, `set_refund_window`, `refund`, `withdraw`, `anchor_batch` and
+`prune_batches` — with no threshold logic in this repository. This is covered by
+tests in `contracts/refund-vault/tests/multisig_admin_vault.rs` and
+`contracts/receipt-anchor/tests/multisig_admin_anchor.rs` (see
+[`DEPLOYMENTS.md`](../DEPLOYMENTS.md#using-a-multisig-contract-account-as-admin)).
+
+Implications for key-compromise risk when the admin is a contract account:
+- **There is no single key that controls the contracts.** If the admin is a
+  multisig with threshold *n*, draining the float or pausing the vault requires
+  compromising *n* distinct signers, not one. The blast radius of any single
+  compromised key collapses to nothing (one signer alone cannot even initiate an
+  admin transfer).
+- **The compromise surface moves to the account contract and its signer
+  management.** The same guarantees that apply to the merchant keypair now apply
+  to whatever governs the account's signer set (e.g. the account contract's own
+  upgrade or signer-rotation policy). Read the account's documentation before
+  relying on it as the vault's admin.
+- **Signer rotation is a separate operation.** The vault's `transfer_admin`
+  two-step handover is one way to move admin to a new account; the alternative is
+  to rotate signers *inside* the account contract, which does not touch the vault
+  at all.
+
 ### 2. The Indexer (Off-chain)
 The off-chain indexer service is responsible for aggregating receipts and computing the Merkle root of the batches. 
 - It is trusted to correctly hash the valid receipts and anchor the legitimate root on-chain.
@@ -40,8 +68,13 @@ Users are untrusted. The contracts must assume any data submitted by users could
 ## Attack Vectors and Mitigations
 
 ### Replay Attacks
-- **Threat:** An attacker attempts to submit a valid refund proof multiple times to drain the vault.
-- **Mitigation:** Once a refund is processed, the `payment_ref` is recorded in persistent storage. The contract checks this state (`AlreadyRefunded` error) to strictly enforce that each receipt can only be refunded once.
+- **Threat:** An attacker attempts to submit the same refund request repeatedly to drain the vault.
+- **Mitigation:** Refunds are cumulative: each `refund` call for a `payment_ref`
+  adds to a stored running total, and cumulative refunds may never exceed the
+  original `payment_amount` supplied on the call. A call that would push the
+  total past the ceiling is rejected with an `ExceedsPayment` error, and a
+  record written by the legacy single-refund rule is treated the same way. There
+  is no code path that pays the same amount twice for one payment.
 
 ### Proof Forgery
 - **Threat:** An attacker tries to claim a refund for a non-existent or altered receipt.
