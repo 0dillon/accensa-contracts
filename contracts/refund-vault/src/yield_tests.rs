@@ -270,13 +270,14 @@ fn test_set_yield_strategy_uninitialized_fails() {
 }
 
 #[test]
-#[should_panic]
 fn test_set_yield_strategy_requires_auth() {
     let (env, vault_client, _merchant, _token, _strategy, _tc) = setup_with_strategy(2000, 8000);
     let new_strategy = Address::generate(&env);
 
     env.set_auths(&[]);
-    vault_client.set_yield_strategy(&new_strategy);
+    // `merchant.require_auth()` aborts rather than returning an error, so the
+    // call is caught by the client as a host error, not `Unauthorized`.
+    assert!(vault_client.try_set_yield_strategy(&new_strategy).is_err());
 }
 
 #[test]
@@ -750,18 +751,17 @@ fn test_yield_deployed_event() {
     vault_client.deposit(&merchant, &5_000_000);
     vault_client.deploy_to_yield(&2_000_000);
 
-    // `events().all()` only reflects the most recent top-level invocation
-    // (deploy_to_yield), not the deposit call before it.
-    let events = env.events().all().filter_by_contract(&vault_client.address);
+    // Note: `env.events().all()` returns only the events of the last contract
+    // invocation, so this asserts on the deploy invocation's events alone.
     assert_eq!(
-        events,
+        env.events().all().filter_by_contract(&vault_client.address),
         vec![
             &env,
             (
                 vault_client.address.clone(),
                 (
                     Symbol::new(&env, "yield_deployed_event"),
-                    strategy_addr.clone(),
+                    strategy_addr.clone()
                 )
                     .into_val(&env),
                 soroban_sdk::map![&env, (Symbol::new(&env, "amount"), 2_000_000i128)]
@@ -786,16 +786,14 @@ fn test_yield_harvested_event() {
 
     vault_client.harvest_yield();
 
-    // `events().all()` only reflects the most recent top-level invocation
-    // (harvest_yield), not the deposit/deploy_to_yield calls before it.
-    let events = env.events().all().filter_by_contract(&vault_client.address);
+    // `env.events().all()` returns only the last invocation's events (the harvest).
     assert_eq!(
-        events,
+        env.events().all().filter_by_contract(&vault_client.address),
         vec![
             &env,
             (
                 vault_client.address.clone(),
-                vec![&env, Symbol::new(&env, "yield_harvested_event")].into_val(&env),
+                (Symbol::new(&env, "yield_harvested_event"),).into_val(&env),
                 soroban_sdk::map![&env, (Symbol::new(&env, "amount"), 200_000i128)].into_val(&env)
             ),
         ]
