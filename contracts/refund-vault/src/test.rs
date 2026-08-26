@@ -498,7 +498,10 @@ fn test_commit_meta_is_well_formed() {
     );
 
     let dirty = env!("GIT_DIRTY");
-    assert!(dirty == "0" || dirty == "1", "GIT_DIRTY must be '0' or '1', got: {dirty}");
+    assert!(
+        dirty == "0" || dirty == "1",
+        "GIT_DIRTY must be '0' or '1', got: {dirty}"
+    );
 }
 
 #[test]

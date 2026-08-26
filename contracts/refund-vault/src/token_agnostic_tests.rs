@@ -21,10 +21,8 @@
 //! the facilitator's) responsibility, not the contract's.
 
 use soroban_sdk::{
-    contract, contractimpl, contracttype,
-    testutils::Address as _,
-    token::TokenClient,
-    Address, BytesN, Env,
+    contract, contractimpl, contracttype, testutils::Address as _, token::TokenClient, Address,
+    BytesN, Env,
 };
 
 use crate::{Error, RefundVault, RefundVaultClient};
@@ -159,7 +157,12 @@ fn setup_with_token(decimals: u32) -> VaultWithToken {
 
 #[test]
 fn test_full_lifecycle_with_zero_decimal_token() {
-    let VaultWithToken { env, client, merchant, token_client } = setup_with_token(0);
+    let VaultWithToken {
+        env,
+        client,
+        merchant,
+        token_client,
+    } = setup_with_token(0);
 
     // This mock really is a non-7-decimal asset: 1 unit == 1 whole token.
     assert_eq!(token_client.decimals(), 0);
@@ -184,7 +187,12 @@ fn test_full_lifecycle_with_zero_decimal_token() {
 
 #[test]
 fn test_full_lifecycle_with_two_decimal_token() {
-    let VaultWithToken { env, client, merchant, token_client } = setup_with_token(2);
+    let VaultWithToken {
+        env,
+        client,
+        merchant,
+        token_client,
+    } = setup_with_token(2);
 
     assert_eq!(token_client.decimals(), 2);
 
@@ -204,7 +212,12 @@ fn test_full_lifecycle_with_two_decimal_token() {
 
 #[test]
 fn test_float_bound_check_with_non_7_decimal_token() {
-    let VaultWithToken { env, client, merchant, token_client: _ } = setup_with_token(0);
+    let VaultWithToken {
+        env,
+        client,
+        merchant,
+        token_client: _,
+    } = setup_with_token(0);
 
     client.deposit(&merchant, &100);
 
@@ -221,7 +234,12 @@ fn test_float_bound_check_with_non_7_decimal_token() {
 
 #[test]
 fn test_refund_exactly_equal_to_float_succeeds() {
-    let VaultWithToken { env, client, merchant, token_client } = setup_with_token(0);
+    let VaultWithToken {
+        env,
+        client,
+        merchant,
+        token_client,
+    } = setup_with_token(0);
 
     client.deposit(&merchant, &1_000);
 
@@ -241,7 +259,12 @@ fn test_refund_exactly_equal_to_float_succeeds() {
 
 #[test]
 fn test_smallest_unit_round_trip() {
-    let VaultWithToken { env, client, merchant, token_client } = setup_with_token(0);
+    let VaultWithToken {
+        env,
+        client,
+        merchant,
+        token_client,
+    } = setup_with_token(0);
 
     // 1 is the smallest representable unit of a 0-decimal token; the vault must
     // handle it in every direction (deposit, refund, withdraw).
