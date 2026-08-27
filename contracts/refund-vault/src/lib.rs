@@ -13,6 +13,7 @@ contractmeta!(
     val = "https://github.com/accensa/accensa-contracts"
 );
 contractmeta!(key = "commit", val = env!("GIT_SHA"));
+
 contractmeta!(key = "commit_dirty", val = env!("GIT_DIRTY"));
 
 #[contracttype]
@@ -40,6 +41,7 @@ pub enum DataKey {
     HarvestedYield,
     ReserveRatio,
     MaxDeployRatio,
+    PendingPolicy,
     /// Reentrancy guard flag. Set for the duration of any entry point that
     /// makes an external call (token transfer or yield-strategy invocation)
     /// so a callback into another guarded entry point during that call is
@@ -60,6 +62,14 @@ pub struct RefundRecord {
     pub recipient: Address,
     /// Ledger of the most recent refund call.
     pub ledger: u32,
+}
+
+/// A pending policy change waiting for the timelock to expire.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PolicyProposal {
+    pub window: u32,
+    pub proposed_at_ledger: u32,
 }
 
 #[contracttype]
@@ -121,20 +131,6 @@ pub struct UnpauseEvent {
     pub ledger: u32,
 }
 
-/// Emitted when the merchant changes the refund window.
-///
-/// Topics: `("refund_window_updated_event", previous_window, new_window)`.
-/// Both values are carried so a reader can tell whether a refund rejected at a
-/// given ledger was rejected under the old rule or the new one.
-#[contractevent]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct RefundWindowUpdatedEvent {
-    #[topic]
-    pub previous_window: u32,
-    #[topic]
-    pub new_window: u32,
-}
-
 #[contractevent]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct WithdrawEvent {
@@ -184,6 +180,22 @@ pub struct YieldHarvestedEvent {
     pub amount: i128,
 }
 
+#[contractevent]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PolicyProposedEvent {
+    #[topic]
+    pub window: u32,
+    pub proposed_at_ledger: u32,
+    pub execute_after_ledger: u32,
+}
+
+#[contractevent]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PolicyExecutedEvent {
+    #[topic]
+    pub window: u32,
+}
+
 /// Interface for external yield-generating strategies (e.g., Soroban lending protocols).
 ///
 /// Any contract that implements these methods can be registered as the vault's yield
@@ -219,6 +231,8 @@ pub trait YieldStrategy {
 const TTL_EXTEND: u32 = 518_400;
 /// The threshold before TTL is actually bumped, to prevent spamming updates on every call.
 const TTL_THRESHOLD: u32 = 100;
+/// Timelock delay for policy changes in ledgers (~24 hours at 5s/ledger).
+const POLICY_TIMELOCK: u32 = 17_280;
 
 /// Reentrancy guard for entry points that make an external call (a token
 /// transfer or a yield-strategy invocation).
@@ -552,7 +566,11 @@ impl RefundVault {
         Ok(())
     }
 
-    pub fn set_refund_window(env: Env, ledgers: u32) -> Result<(), Error> {
+    /// Propose a new refund window. The change is not applied immediately;
+    /// the admin must call `execute_policy` after the timelock (17,280 ledgers,
+    /// ~24 hours) has elapsed. Proposing a new policy overwrites any existing
+    /// pending proposal.
+    pub fn propose_policy(env: Env, ledgers: u32) -> Result<(), Error> {
         let merchant: Address = env
             .storage()
             .instance()
@@ -560,18 +578,57 @@ impl RefundVault {
             .ok_or(Error::NotInitialized)?;
         merchant.require_auth();
 
-        let previous: u32 = env
-            .storage()
-            .instance()
-            .get(&DataKey::RefundWindow)
-            .unwrap();
+        let current_ledger = env.ledger().sequence();
+        let proposal = PolicyProposal {
+            window: ledgers,
+            proposed_at_ledger: current_ledger,
+        };
+
         env.storage()
             .instance()
-            .set(&DataKey::RefundWindow, &ledgers);
+            .set(&DataKey::PendingPolicy, &proposal);
 
-        RefundWindowUpdatedEvent {
-            previous_window: previous,
-            new_window: ledgers,
+        PolicyProposedEvent {
+            window: ledgers,
+            proposed_at_ledger: current_ledger,
+            execute_after_ledger: current_ledger + POLICY_TIMELOCK,
+        }
+        .publish(&env);
+
+        env.storage()
+            .instance()
+            .extend_ttl(TTL_THRESHOLD, TTL_EXTEND);
+        Ok(())
+    }
+
+    /// Execute a pending policy change. Fails if no policy is pending or if
+    /// the timelock has not yet expired.
+    pub fn execute_policy(env: Env) -> Result<(), Error> {
+        let merchant: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .ok_or(Error::NotInitialized)?;
+        merchant.require_auth();
+
+        let proposal: PolicyProposal = env
+            .storage()
+            .instance()
+            .get(&DataKey::PendingPolicy)
+            .ok_or(Error::NoPendingPolicy)?;
+
+        let current_ledger = env.ledger().sequence();
+        if current_ledger < proposal.proposed_at_ledger + POLICY_TIMELOCK {
+            return Err(Error::TimelockNotExpired);
+        }
+
+        env.storage()
+            .instance()
+            .set(&DataKey::RefundWindow, &proposal.window);
+        env.storage().instance().remove(&DataKey::PendingPolicy);
+
+        PolicyExecutedEvent {
+            window: proposal.window,
         }
         .publish(&env);
 
@@ -585,6 +642,16 @@ impl RefundVault {
         env.storage()
             .persistent()
             .get(&DataKey::RefundV2(payment_ref))
+    }
+
+    /// Returns the current pending policy proposal, if any.
+    pub fn get_pending_policy(env: Env) -> Option<PolicyProposal> {
+        env.storage().instance().get(&DataKey::PendingPolicy)
+    }
+
+    /// Returns the policy timelock delay in ledgers (read-only).
+    pub fn get_policy_timelock() -> u32 {
+        POLICY_TIMELOCK
     }
 
     // ── Yield strategy management ──────────────────────────────────────────

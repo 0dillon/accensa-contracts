@@ -72,4 +72,14 @@ pub enum Error {
     /// a wasm-level invocation failure or a value that failed to decode.
     /// Distinct from `BatchNotFound`, which a shard returns deliberately.
     ShardCallFailed = 102,
+    /// The supplied Merkle root is not in the historical ring buffer.
+    RootNotFound = 200,
+    /// The Merkle proof exceeds the maximum valid length (`MAX_PROOF_LEN`).
+    ProofTooLong = 201,
+    /// An anchor was submitted before the minimum interval elapsed.
+    AnchorRateLimited = 202,
+    /// No pending policy change exists to execute.
+    NoPendingPolicy = 300,
+    /// The timelock period has not yet elapsed.
+    TimelockNotExpired = 301,
 }
