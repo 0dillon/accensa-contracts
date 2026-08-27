@@ -90,6 +90,22 @@ re-entrancy surface. See [AUDIT.md](AUDIT.md) §2 and §5 for the full treatment
   total past the ceiling is rejected with an `ExceedsPayment` error, and a
   record written by the legacy single-refund rule is treated the same way. There
   is no code path that pays the same amount twice for one payment.
+- **Guard persistence:** This ceiling only holds while the `RefundV2` record it
+  depends on is actually live. The record's TTL is now sized to the
+  merchant's configured `refund_window_ledgers` (extended to the network's
+  maximum TTL when the window is `0`, i.e. "no time bound") rather than a
+  flat interval, so the guard cannot expire while `refund` would still accept
+  a call against that payment on policy grounds — see "TTL Strategy" in
+  [Storage Audit](storage-audit.md) for the mechanism and why the naive flat
+  extension was silently a no-op. What remains unverified against a live
+  network (only checked against this SDK's test host) is whether an entry
+  that *does* go archived — i.e. outlives even the window-sized TTL, or is
+  simply never restored — causes `refund` to fail closed (a host trap on
+  accessing an archived entry) or fail open (a stale read). The test host
+  auto-heals expired entries rather than modeling archival, so it cannot
+  distinguish the two. Treat this as an open item for anyone auditing against
+  testnet/mainnet directly, and see #122 for a nonce-based alternative that
+  would not depend on the answer either way.
 
 ### Proof Forgery
 - **Threat:** An attacker tries to claim a refund for a non-existent or altered receipt.
