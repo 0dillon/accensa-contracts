@@ -40,6 +40,11 @@ pub enum DataKey {
     HarvestedYield,
     ReserveRatio,
     MaxDeployRatio,
+    /// Reentrancy guard flag. Set for the duration of any entry point that
+    /// makes an external call (token transfer or yield-strategy invocation)
+    /// so a callback into another guarded entry point during that call is
+    /// rejected rather than allowed to observe pre-update state.
+    ReentrancyLock,
 }
 
 #[contracttype]
@@ -215,6 +220,47 @@ const TTL_EXTEND: u32 = 518_400;
 /// The threshold before TTL is actually bumped, to prevent spamming updates on every call.
 const TTL_THRESHOLD: u32 = 100;
 
+/// Reentrancy guard for entry points that make an external call (a token
+/// transfer or a yield-strategy invocation).
+///
+/// Soroban does not have EVM-style fallback functions, but an external call
+/// still hands control to arbitrary contract code before this contract's own
+/// state update runs: a non-standard token can invoke recipient/sender hooks
+/// during `transfer`, and a registered yield strategy is fully untrusted
+/// (`docs/AUDIT.md` §5, known issue #7) and can call straight back into any
+/// `RefundVault` entry point from inside `deposit`/`withdraw`/`harvest`. A
+/// single shared instance-storage flag protects every such entry point:
+/// whichever one is first sets the flag before doing its external call and
+/// clears it only after its own state has been fully written, so a reentrant
+/// call — into the same entry point or a different one — observes the flag
+/// set and is rejected with [`Error::ReentrancyBlocked`] instead of racing
+/// ahead of the pending state update.
+///
+/// Because a `Result::Err` returned from a contract entry point rolls back
+/// every storage write that invocation made (including the flag itself),
+/// callers do not need to clear the flag on error paths — only the success
+/// path needs an explicit `release_reentrancy_lock` call.
+fn acquire_reentrancy_lock(env: &Env) -> Result<(), Error> {
+    let locked: bool = env
+        .storage()
+        .instance()
+        .get(&DataKey::ReentrancyLock)
+        .unwrap_or(false);
+    if locked {
+        return Err(Error::ReentrancyBlocked);
+    }
+    env.storage()
+        .instance()
+        .set(&DataKey::ReentrancyLock, &true);
+    Ok(())
+}
+
+fn release_reentrancy_lock(env: &Env) {
+    env.storage()
+        .instance()
+        .set(&DataKey::ReentrancyLock, &false);
+}
+
 #[contract]
 pub struct RefundVault;
 
@@ -242,6 +288,8 @@ impl RefundVault {
     }
 
     pub fn deposit(env: Env, from: Address, amount: i128) -> Result<(), Error> {
+        acquire_reentrancy_lock(&env)?;
+
         if env
             .storage()
             .instance()
@@ -279,6 +327,7 @@ impl RefundVault {
         env.storage()
             .instance()
             .extend_ttl(TTL_THRESHOLD, TTL_EXTEND);
+        release_reentrancy_lock(&env);
         Ok(())
     }
 
@@ -305,6 +354,8 @@ impl RefundVault {
         paid_at_ledger: u32,
         payment_amount: i128,
     ) -> Result<(), Error> {
+        acquire_reentrancy_lock(&env)?;
+
         if env
             .storage()
             .instance()
@@ -407,10 +458,13 @@ impl RefundVault {
         }
         .publish(&env);
 
+        release_reentrancy_lock(&env);
         Ok(())
     }
 
     pub fn withdraw(env: Env, amount: i128, to: Address) -> Result<(), Error> {
+        acquire_reentrancy_lock(&env)?;
+
         if env
             .storage()
             .instance()
@@ -449,6 +503,7 @@ impl RefundVault {
         env.storage()
             .instance()
             .extend_ttl(TTL_THRESHOLD, TTL_EXTEND);
+        release_reentrancy_lock(&env);
         Ok(())
     }
 
@@ -564,6 +619,8 @@ impl RefundVault {
     /// - Post-deployment liquid balance >= reserve_ratio * total_value
     /// - Total deployed <= max_deploy_ratio * total_value
     pub fn deploy_to_yield(env: Env, amount: i128) -> Result<(), Error> {
+        acquire_reentrancy_lock(&env)?;
+
         if env
             .storage()
             .instance()
@@ -657,6 +714,7 @@ impl RefundVault {
         env.storage()
             .instance()
             .extend_ttl(TTL_THRESHOLD, TTL_EXTEND);
+        release_reentrancy_lock(&env);
         Ok(())
     }
 
@@ -665,6 +723,8 @@ impl RefundVault {
     ///
     /// `principal` is the amount of originally-deployed principal to reclaim.
     pub fn withdraw_from_yield(env: Env, principal: i128) -> Result<(), Error> {
+        acquire_reentrancy_lock(&env)?;
+
         if env
             .storage()
             .instance()
@@ -727,12 +787,15 @@ impl RefundVault {
         env.storage()
             .instance()
             .extend_ttl(TTL_THRESHOLD, TTL_EXTEND);
+        release_reentrancy_lock(&env);
         Ok(())
     }
 
     /// Harvest accrued yield from the strategy without touching deployed principal.
     /// Yield tokens are transferred to the vault and tracked for operator withdrawal.
     pub fn harvest_yield(env: Env) -> Result<(), Error> {
+        acquire_reentrancy_lock(&env)?;
+
         if env
             .storage()
             .instance()
@@ -779,6 +842,7 @@ impl RefundVault {
         env.storage()
             .instance()
             .extend_ttl(TTL_THRESHOLD, TTL_EXTEND);
+        release_reentrancy_lock(&env);
         Ok(())
     }
 
@@ -942,6 +1006,7 @@ impl RefundVault {
 }
 
 mod fuzz_test;
+mod reentrancy_tests;
 mod test;
 mod token_agnostic_tests;
 mod yield_tests;
