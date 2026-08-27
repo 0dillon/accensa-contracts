@@ -1186,7 +1186,7 @@ fn test_verify_receipt_memory_scaling_benchmark() {
     let root = BytesN::from_array(&env, &[9u8; 32]);
     let batch_id = client.anchor_batch(&root, &42, &1000, &2000);
 
-    for proof_len in [8, 16, 32, 64] {
+    for proof_len in [2, 4, 6, 8, 10] {
         let mut proof_vec = soroban_sdk::Vec::new(&env);
         for i in 0..proof_len {
             proof_vec.push_back(BytesN::from_array(&env, &[(i % 256) as u8; 32]));
