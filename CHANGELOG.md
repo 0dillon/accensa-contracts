@@ -10,6 +10,21 @@ breaking changes bump the **minor** version, and they are called out as such.
 
 ### Added
 
+- **Refund fees for `RefundVault`**: the merchant can configure a fee deducted
+  from every successful refund — `set_fee_bps(bps)` fixes the rate (basis
+  points, up to 10_000) and `set_fee_recipient(recipient)` the collector
+  address; both are admin-only and setting the recipient to the vault's own
+  address is rejected (`SelfTransfer`). `refund` splits each claim into the
+  buyer's payout and the fee, which always rounds **up** so the sub-unit
+  remainder accrues to the protocol. If no recipient is configured the fee
+  defaults to the merchant. The total outflow per claim is unchanged
+  (`payout + fee == amount`), the `payment_amount` ceiling and the float check
+  are untouched, and the fee is `0` unless configured, so `initialize` and
+  existing deployments are unaffected. New `get_fee_bps()` /
+  `get_fee_recipient()` getters expose the configuration, and the
+  `RefundEvent` data map gains a `fee` field (append-only, see
+  `docs/EVENTS.md`).
+
 - **Refund expiration deadline for `RefundVault`**: the refund policy now
   carries a wall-clock deadline (Unix timestamp) alongside the ledger-based
   window — `propose_policy(ledgers, deadline)` configures it (subject to the

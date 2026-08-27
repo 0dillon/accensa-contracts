@@ -126,6 +126,12 @@ re-entrancy surface. See [AUDIT.md](AUDIT.md) §2 and §5 for the full treatment
 - **Mitigation:** Both `refund` and `withdraw` explicitly validate that `recipient != env.current_contract_address()` and `to != env.current_contract_address()`, rejecting violations with `Error::SelfTransfer` before any persistent state is written or events emitted.
 - **`recipient == merchant` decision:** Refunding to the merchant's own address is permitted by design. A merchant may be testing automated refund workflows, acting as buyer in self-settlement flows, or executing an explicit accounting reversal. Because float does leave the contract and transfers to the merchant balance, the transfer is real and non-phantom.
 
+### Refund Fee Integrity
+- **Threat:** A refund fee mis-accounts for the claim, so a buyer's payout or the collector's cut is wrong — either leaking float to a fee collector or short-changing the buyer.
+- **Mitigation:** The fee cannot expand a claim. `refund` computes `fee = ceil(amount × fee_bps / 10_000)` in an overflow-free decomposition and pays `payout = amount - fee` to the buyer; total outflow is exactly `amount`, so the `payment_amount` ceiling and the float check (both measured pre-fee) are unchanged. The ceiling formula always rounds **up**, so a sub-smallest-unit remainder accrues to the fee recipient rather than being lost or minted.
+- **Fee recipient must not be the contract:** `set_fee_recipient` rejects the vault's own address (`SelfTransfer`), and `refund` defensively re-checks before paying, so the fee can never be a no-op transfer that "rounds up" float into nothing. When no recipient is configured, the fee defaults to the **merchant** — a deterministic, authorised destination — never to a caller-selected address.
+- **Admin-only configuration:** `set_fee_bps` and `set_fee_recipient` both require merchant auth, so a third party cannot steer future fee payments.
+
 ### Token Address Changeability
 - **Guarantee:** A vault initialized with an incorrect token address can be recovered via `set_token` if and only if the vault holds zero balance (`balance == 0`). If the vault contains any active float (`balance > 0`), `set_token` is rejected with `Error::FloatNotEmpty`. This allows correction of deployment-time typos without ever permitting an admin to swap the underlying asset out from under a funded vault.
 

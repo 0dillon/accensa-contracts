@@ -113,14 +113,15 @@ fn deposit(env: Env, from: Address, amount: i128) -> Result<(), Error>
 - **Authentication:** Requires the merchant's signature.
 
 ### `refund`
-Executes a refund to a specified address, provided it occurs within the merchant's declared refund window.
+Executes a refund to a specified address, provided it occurs within the merchant's declared refund window and wall-clock deadline.
 
 ```rust
-fn refund(env: Env, payment_ref: BytesN<32>, recipient: Address, amount: i128, paid_at_ledger: u32) -> Result<(), Error>
+fn refund(env: Env, payment_ref: BytesN<32>, recipient: Address, amount: i128, paid_at_ledger: u32, payment_amount: i128) -> Result<(), Error>
 ```
 - **Authentication:** Requires the merchant's signature.
-- **Constraints:** Fails with `AlreadyRefunded` if the `payment_ref` was refunded before, with `WindowExpired` if the current ledger exceeds `paid_at_ledger + window` (boundary ledger still refundable; skipped when the window is `0`), and with `InsufficientFloat` if the vault balance cannot cover `amount`.
-- **Emits:** `refunded` event carrying the payment reference and the stored `RefundRecord`.
+- **Constraints:** Fails with `ExceedsPayment` if cumulative refunds would exceed `payment_amount`, with `WindowExpired` if the current ledger exceeds `paid_at_ledger + window` (boundary ledger still refundable; skipped when the window is `0`), with `RefundExpired` if the policy deadline has strictly passed, and with `InsufficientFloat` if the vault balance cannot cover `amount`.
+- **Fees:** When a fee is configured (`set_fee_bps`), the claim is split into the recipient's `payout` and a `fee` that rounds up to the fee recipient (`payout + fee == amount`). An unset fee recipient defaults to the merchant; configuring the vault's own address is rejected.
+- **Emits:** `RefundEvent` carrying the payment reference and the stored `RefundRecord` (including the per-call `fee`).
 
 ### `withdraw`
 Returns float from the vault to an address of the merchant's choosing.
@@ -167,6 +168,34 @@ Returns the configured policy deadline as a Unix timestamp (read-only). `0` mean
 
 ```rust
 fn get_refund_deadline(env: Env) -> u64
+```
+
+### `set_fee_bps`
+Sets the refund fee rate in basis points (`0` = no fee, up to `10_000` = 100%). Admin auth required. Values above `10_000` return `InvalidRatio`. Emits `FeeConfigUpdatedEvent`. Extends the instance TTL.
+
+```rust
+fn set_fee_bps(env: Env, bps: u32) -> Result<(), Error>
+```
+
+### `set_fee_recipient`
+Sets the address that collects the fee deducted from each refund. Setting the vault's own address returns `SelfTransfer`. Admin auth required. Emits `FeeConfigUpdatedEvent`. Extends the instance TTL.
+
+```rust
+fn set_fee_recipient(env: Env, recipient: Address) -> Result<(), Error>
+```
+
+### `get_fee_bps`
+Returns the configured fee rate in basis points (read-only).
+
+```rust
+fn get_fee_bps(env: Env) -> u32
+```
+
+### `get_fee_recipient`
+Returns the configured fee recipient, if any (read-only). At claim time an unset recipient falls back to the merchant (admin).
+
+```rust
+fn get_fee_recipient(env: Env) -> Option<Address>
 ```
 
 ### `get_refund`

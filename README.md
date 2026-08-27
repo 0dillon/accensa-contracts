@@ -120,6 +120,10 @@ Holds merchant float and executes refunds bounded by an on-chain policy.
 | `get_pending_policy()` | Returns the current pending policy proposal, if any. |
 | `get_policy_timelock()` | Returns the policy timelock delay in ledgers (read-only). |
 | `get_refund_deadline()` | Returns the configured policy deadline as a Unix timestamp (`0` = none, read-only). |
+| `set_fee_bps(bps)` | Sets the refund fee rate in basis points (0–10_000, default 0). Merchant auth, emits `FeeConfigUpdatedEvent`. |
+| `set_fee_recipient(recipient)` | Sets the address that collects the refund fee; rejects the vault's own address. Merchant auth, emits `FeeConfigUpdatedEvent`. |
+| `get_fee_bps()` | Returns the configured fee rate in basis points (read-only). |
+| `get_fee_recipient()` | Returns the configured fee recipient, if any (read-only; falls back to the merchant at claim time). |
 | `get_refund(payment_ref) -> Option<RefundRecord>` | Looks up a refund. |
 | `pause()` | Pauses operations for emergency stops. Merchant auth required. |
 | `unpause()` | Resumes paused operations. Merchant auth required. |
@@ -130,19 +134,22 @@ Emits:
 | Event | Topics | Data |
 |---|---|---|
 | `DepositEvent` | `("deposit_event", from)` | `amount` |
-| `RefundEvent` | `("refund_event", payment_ref)` | `amount` (this call), `cumulative_refunded`, `recipient`, `ledger` |
+| `RefundEvent` | `("refund_event", payment_ref)` | `amount` (this call), `fee` (this call), `cumulative_refunded`, `recipient`, `ledger` |
 | `WithdrawEvent` | `("withdraw_event", to)` | `amount` |
 | `PauseEvent` | `("pause_event", ledger)` | — |
 | `UnpauseEvent` | `("unpause_event", ledger)` | — |
 | `RefundWindowUpdatedEvent` | `("refund_window_updated_event", previous_window, new_window)` | — |
 | `PolicyProposedEvent` | `("policy_proposed_event", window)` | `deadline`, `proposed_at_ledger`, `execute_after_ledger` |
 | `PolicyExecutedEvent` | `("policy_executed_event", window)` | `deadline` |
+| `FeeConfigUpdatedEvent` | `("fee_config_updated_event", field)` | `fee_bps`, `fee_recipient` (full effective config) |
 
 Each partial refund emits its own `RefundEvent` carrying **both** the amount for
 that call (`amount`) and the running total (`cumulative_refunded`), so an indexer
 knows the state of a payment without summing history. `RefundRecord` stores the
 cumulative total (`amount_refunded`) plus the `payment_amount` ceiling, the
-`paid_at_ledger` the window is measured from, and the recipient.
+`paid_at_ledger` the window is measured from, and the recipient. When a fee is
+configured, each `RefundEvent` also carries the `fee` deducted from the claim,
+and the fee is paid to the `fee_recipient` alongside the recipient's payout.
 
 **Cross-Contract Joins** (both claims below are pinned by tests in
 `contracts/refund-vault/tests/integration_test.rs`):
@@ -160,6 +167,11 @@ Enforced invariants, each covered by a test:
 - **Deadline from the policy** — refunds stop being claimable once the
   configured wall-clock deadline has strictly passed (`RefundExpired`); a
   deadline of `0` disables expiry.
+- **Fee-bounded split** — when configured, each claim is split into the
+  recipient's payout and a fee that rounds **up** (sub-unit remainders accrue
+  to the fee recipient); `payout + fee == amount` exactly, so the fee never
+  expands the claim, the `payment_amount` ceiling, or the float check. Without
+  a configured recipient the fee defaults to the merchant.
 - **Float-bounded** — a refund can never exceed vault balance (`InsufficientFloat`).
 - **Merchant-only** — every state-changing call requires merchant auth
   (`Unauthorized`); the admin may be a contract account (see

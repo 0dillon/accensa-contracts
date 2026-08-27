@@ -49,11 +49,14 @@ Emitted when a payment is refunded to an agent.
 
 - **Topics**: `("refund_event", payment_ref: BytesN<32>)`
 - **Data Map**:
-  - `amount` (`i128`): The amount refunded (in the token's smallest unit).
-  - `recipient` (`Address`): The address that received the refund.
-  - `ledger` (`u32`): The ledger sequence when the original payment occurred.
+  - `amount` (`i128`): The amount refunded in this call, before the fee is deducted (in the token's smallest unit).
+  - `fee` (`i128`): The fee deducted from `amount` and paid to the fee recipient in this call. `0` when no fee is configured.
+  - `cumulative_refunded` (`i128`): The running total across all refunds for this `payment_ref` (pre-fee), so an indexer knows the state without summing history.
+  - `recipient` (`Address`): The address that received the payout.
+  - `ledger` (`u32`): The ledger sequence of the refund.
+- **Fee accounting:** `amount == payout + fee` exactly; the total outflow per claim equals `amount`, so fees never expand the `payment_amount` ceiling or the float check. When a fee is charged and no recipient is configured, the fee defaults to the merchant.
 
-*Note: The data map is structurally identical to the `RefundRecord` returned by `get_refund`.*
+*Note: `fee` and `cumulative_refunded` are appended fields; per the stability policy, indexers must tolerate them rather than expect the historical `(amount, recipient, ledger)` shape.*
 
 ### 5. `WithdrawEvent`
 Emitted when the merchant withdraws funds from the float.
@@ -99,3 +102,11 @@ Emitted when the merchant executes a pending policy change after the timelock.
 - **Topics**: `("policy_executed_event", window: u32)`
 - **Data Map**:
   - `deadline` (`u64`): The wall-clock deadline (Unix timestamp) now in force; `0` means no deadline.
+
+### 11. `FeeConfigUpdatedEvent`
+Emitted when the merchant changes the refund fee configuration (the basis-point rate or the recipient address). Each emission carries the **full effective configuration** — including the current value of the other field — keyed by the field that changed.
+
+- **Topics**: `("fee_config_updated_event", field: Symbol)` where `field` is `"fee_bps"` (rate changed) or `"fee_recipient"` (recipient changed).
+- **Data Map**:
+  - `fee_bps` (`u32`): The fee rate in basis points in force after the change; `0` means no fee.
+  - `fee_recipient` (`Address`): The effective fee recipient, resolved via the merchant fallback when none is configured.

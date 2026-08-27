@@ -624,6 +624,10 @@ fn test_events_emitted() {
         120_000i128.into_val(&env),
     );
     refund_data.set(
+        Symbol::new(&env, "fee").into_val(&env),
+        0i128.into_val(&env),
+    );
+    refund_data.set(
         Symbol::new(&env, "cumulative_refunded").into_val(&env),
         120_000i128.into_val(&env),
     );
@@ -1241,6 +1245,408 @@ fn test_zero_deadline_disables_expiry() {
     let buyer = Address::generate(&env);
     client.refund(&payment_ref, &buyer, &100, &env.ledger().sequence(), &100);
     assert!(client.get_refund(&payment_ref).is_some());
+}
+
+// ── Refund fee tests ───────────────────────────────────────────────────────
+//
+// A fee configured in basis points (1 bp = 0.01%) is deducted from each claim.
+// Rounding always rounds *up* so a remainder smaller than one smallest unit of
+// the token is collected by the protocol (the fee recipient) rather than lost.
+
+/// Reference implementation of the fee formula, used to independently verify
+/// the contract's `refund_fee` across the sweep tests below:
+/// `ceil(amount * fee_bps / 10_000)`, computed in u128 to avoid truncation.
+fn reference_fee(amount: i128, bps: u32) -> i128 {
+    let scaled = (amount as u128) * bps as u128;
+    scaled.div_ceil(10_000) as i128
+}
+
+#[test]
+fn test_refund_fee_helper_math_rounds_up() {
+    // Rounding table: the protocol keeps any sub-basis-point remainder.
+    let cases = [
+        (0i128, 0u32, 0i128),
+        (0, 500, 0),
+        (1, 1, 1),   // ceil(0.0001) = 1
+        (100, 1, 1), // ceil(0.01) = 1
+        (100, 500, 5),
+        (100, 1000, 10),
+        (9_999, 1, 1),            // ceil(0.9999) = 1
+        (10_000, 1, 1),           // exactly 1
+        (333, 3, 1),              // ceil(0.0999) = 1
+        (5_000, 3, 2),            // 1.5 -> 2
+        (10_000, 100, 100),       // 1%
+        (10_000, 10_000, 10_000), // 100%
+    ];
+    for (amount, bps, expected) in cases {
+        assert_eq!(
+            refund_fee(amount, bps),
+            expected,
+            "amount={amount} fee_bps={bps}"
+        );
+    }
+
+    // Cross-check the helper against the reference across a sweep.
+    for amount in [
+        1i128,
+        99,
+        100,
+        7,
+        499,
+        500,
+        501,
+        9_999,
+        10_000,
+        12_345,
+        1_700_000_000,
+    ] {
+        for bps in [0u32, 1, 3, 10, 25, 100, 500, 2500, 700, 9999, 10_000] {
+            assert_eq!(
+                refund_fee(amount, bps),
+                reference_fee(amount, bps),
+                "amount={amount} fee_bps={bps}"
+            );
+        }
+    }
+}
+
+#[test]
+fn test_fee_defaults_disabled() {
+    let (env, client, merchant, token) = setup(100);
+    client.deposit(&merchant, &500_000);
+
+    assert_eq!(client.get_fee_bps(), 0);
+    assert_eq!(client.get_fee_recipient(), None);
+
+    // Unconfigured fees: the buyer receives the full claim, nothing is diverted.
+    let payment_ref = BytesN::from_array(&env, &[0x40u8; 32]);
+    let buyer = Address::generate(&env);
+    client.refund(&payment_ref, &buyer, &100_000, &0, &100_000);
+
+    let token_client = TokenClient::new(&env, &token);
+    assert_eq!(token_client.balance(&buyer), 100_000);
+    assert_eq!(token_client.balance(&client.address), 400_000);
+
+    // The refund event reports a zero fee.
+    let record = client.get_refund(&payment_ref).unwrap();
+    assert_eq!(record.amount_refunded, 100_000);
+    assert_eq!(record.recipient, buyer);
+}
+
+#[test]
+fn test_fee_deducted_and_collected_exactly() {
+    let (env, client, merchant, token) = setup(100);
+    let token_client = TokenClient::new(&env, &token);
+    StellarAssetClient::new(&env, &token).mint(&merchant, &9_000_000);
+    client.deposit(&merchant, &10_000_000);
+
+    let buyer = Address::generate(&env);
+    let fee_collector = Address::generate(&env);
+    client.set_fee_recipient(&fee_collector);
+    client.set_fee_bps(&100); // 1%
+
+    let payment_ref = BytesN::from_array(&env, &[0x41u8; 32]);
+    client.refund(&payment_ref, &buyer, &1_000_000, &0, &1_000_000);
+
+    // 1% of 1M = 10_000 exactly; buyer receives the remainder.
+    assert_eq!(token_client.balance(&buyer), 1_000_000 - 10_000);
+    assert_eq!(token_client.balance(&fee_collector), 10_000);
+    assert_eq!(token_client.balance(&client.address), 9_000_000);
+
+    // 3 bp of an odd amount: 123_456 * 3 / 10_000 = 37.0368 -> 38 (rounds up).
+    client.set_fee_bps(&3);
+    let ref2 = BytesN::from_array(&env, &[0x42u8; 32]);
+    client.refund(&ref2, &buyer, &123_456, &0, &123_456);
+    assert_eq!(token_client.balance(&fee_collector), 10_000 + 38);
+    assert_eq!(token_client.balance(&buyer), 990_000 + 123_456 - 38);
+
+    // 1 bp on a sub-10_000 amount still yields one unit (ceil).
+    client.set_fee_bps(&1);
+    let ref3 = BytesN::from_array(&env, &[0x43u8; 32]);
+    client.refund(&ref3, &buyer, &7, &0, &7);
+    assert_eq!(token_client.balance(&fee_collector), 10_000 + 38 + 1);
+    assert_eq!(token_client.balance(&buyer), 990_000 + 123_456 - 38 + 7 - 1);
+
+    // Total outflow (buyer + fees) is exactly the sum of the claims.
+    let total_claims = 1_000_000 + 123_456 + 7;
+    assert_eq!(
+        token_client.balance(&client.address),
+        10_000_000 - total_claims
+    );
+    assert_eq!(token_client.balance(&fee_collector), 10_000 + 38 + 1);
+
+    // Returning the fee to zero disables it again.
+    client.set_fee_bps(&0);
+    let ref4 = BytesN::from_array(&env, &[0x44u8; 32]);
+    client.refund(&ref4, &buyer, &5_000, &0, &5_000);
+    assert_eq!(
+        token_client.balance(&buyer),
+        990_000 + 123_456 - 38 + 7 - 1 + 5_000
+    );
+    assert_eq!(token_client.balance(&fee_collector), 10_000 + 38 + 1);
+}
+
+#[test]
+fn test_fee_math_various_bps_exact_balances() {
+    let (env, client, merchant, token) = setup(100);
+    let token_client = TokenClient::new(&env, &token);
+    StellarAssetClient::new(&env, &token).mint(&merchant, &99_000_000);
+    client.deposit(&merchant, &100_000_000);
+
+    let buyer = Address::generate(&env);
+    let fee_collector = Address::generate(&env);
+    client.set_fee_recipient(&fee_collector);
+
+    // (claim, bps) sweep across many basis-point configurations: after every
+    // step the buyer, fee collector and vault balances match exactly.
+    let sweep = [
+        (1_000_000i128, 0u32),
+        (1_000_000, 1),
+        (1_000_000, 10),
+        (1_000_000, 100),
+        (1_000_000, 700),
+        (1_000_000, 9999),
+        (123_457, 1),
+        (123_457, 3),
+        (123_457, 25),
+        (5_000, 2500),
+        (100, 1),
+        (1, 1),
+        (1, 10_000),
+        (10_000_000, 500),
+    ];
+
+    let mut buyer_total = 0i128;
+    let mut fee_total = 0i128;
+    let mut claimed_total = 0i128;
+
+    for (i, (amount, bps)) in sweep.iter().enumerate() {
+        client.set_fee_bps(bps);
+        let fee = reference_fee(*amount, *bps);
+
+        let payment_ref = BytesN::from_array(&env, &[0x50u8 + i as u8; 32]);
+        client.refund(&payment_ref, &buyer, amount, &0, amount);
+
+        buyer_total += amount - fee;
+        fee_total += fee;
+        claimed_total += amount;
+
+        // The buyer and the fee collector each hold exactly their running
+        // shares, and the vault holds exactly what the claims did not drain.
+        assert_eq!(
+            token_client.balance(&buyer),
+            buyer_total,
+            "buyer balance after (amount={amount}, bps={bps})"
+        );
+        assert_eq!(
+            token_client.balance(&fee_collector),
+            fee_total,
+            "fee balance after (amount={amount}, bps={bps})"
+        );
+        assert_eq!(
+            token_client.balance(&client.address),
+            100_000_000 - claimed_total,
+            "vault balance after (amount={amount}, bps={bps})"
+        );
+    }
+}
+
+#[test]
+fn test_fee_claim_equal_to_float_succeeds_and_drains() {
+    // A 10% fee on a claim equal to the entire float still inflows exactly to
+    // both parties and drains the vault to zero.
+    let (env, client, merchant, token) = setup(100);
+    let token_client = TokenClient::new(&env, &token);
+    client.deposit(&merchant, &5_000);
+
+    let buyer = Address::generate(&env);
+    let fee_collector = Address::generate(&env);
+    client.set_fee_recipient(&fee_collector);
+    client.set_fee_bps(&1000); // 10%
+
+    let payment_ref = BytesN::from_array(&env, &[0x45u8; 32]);
+    client.refund(&payment_ref, &buyer, &5_000, &0, &5_000);
+
+    assert_eq!(token_client.balance(&buyer), 4_500);
+    assert_eq!(token_client.balance(&fee_collector), 500);
+    assert_eq!(token_client.balance(&client.address), 0);
+}
+
+#[test]
+fn test_fee_defaults_to_merchant_when_no_recipient_set() {
+    let (env, client, merchant, token) = setup(100);
+    let token_client = TokenClient::new(&env, &token);
+    client.deposit(&merchant, &500_000);
+
+    // Fee configured but no explicit recipient: the merchant collects the fee.
+    client.set_fee_bps(&100); // 1%
+
+    let payment_ref = BytesN::from_array(&env, &[0x46u8; 32]);
+    let buyer = Address::generate(&env);
+    client.refund(&payment_ref, &buyer, &100_000, &0, &100_000);
+
+    assert_eq!(token_client.balance(&buyer), 99_000);
+    assert_eq!(token_client.balance(&merchant), 500_000 + 1_000);
+    assert_eq!(token_client.balance(&client.address), 400_000);
+
+    // An explicit recipient overrides the merchant default.
+    let fee_collector = Address::generate(&env);
+    client.set_fee_recipient(&fee_collector);
+    assert_eq!(client.get_fee_recipient(), Some(fee_collector.clone()));
+    let ref2 = BytesN::from_array(&env, &[0x47u8; 32]);
+    client.refund(&ref2, &buyer, &50_000, &0, &50_000);
+    assert_eq!(token_client.balance(&fee_collector), 500);
+    assert_eq!(token_client.balance(&merchant), 501_000);
+}
+
+#[test]
+fn test_fee_applies_to_partial_refunds_and_ceiling() {
+    // Partial refunds are still ceiling-bounded by the pre-fee claim amount:
+    // the fee is an outflow split, not an expansion of what may be claimed.
+    let (env, client, merchant, _token) = setup(100);
+    StellarAssetClient::new(&env, &_token).mint(&merchant, &1_000_000);
+    client.deposit(&merchant, &2_000_000);
+
+    let buyer = Address::generate(&env);
+    let fee_collector = Address::generate(&env);
+    client.set_fee_recipient(&fee_collector);
+    client.set_fee_bps(&100); // 1%
+
+    let payment_ref = BytesN::from_array(&env, &[0x48u8; 32]);
+    // payment_amount (the ceiling) is 1M; each partial claim is pre-fee.
+    client.refund(&payment_ref, &buyer, &400_000, &0, &1_000_000);
+    let record = client.get_refund(&payment_ref).unwrap();
+    assert_eq!(record.amount_refunded, 400_000);
+    assert_eq!(record.payment_amount, 1_000_000);
+
+    client.refund(&payment_ref, &buyer, &400_000, &0, &1_000_000);
+    let record = client.get_refund(&payment_ref).unwrap();
+    assert_eq!(record.amount_refunded, 800_000);
+
+    // The remaining 600_000 is still claimable (ceiling is pre-fee), but
+    // 600_000 + 600_000 would exceed the ceiling.
+    client.refund(&payment_ref, &buyer, &200_000, &0, &1_000_000);
+    assert_eq!(
+        client.get_refund(&payment_ref).unwrap().amount_refunded,
+        1_000_000
+    );
+    assert_eq!(
+        client.try_refund(&payment_ref, &buyer, &1, &0, &1_000_000),
+        Err(Ok(Error::ExceedsPayment))
+    );
+}
+
+#[test]
+fn test_set_fee_bps_rejects_out_of_range() {
+    let (_env, client, _merchant, _token) = setup(100);
+
+    assert_eq!(
+        client.try_set_fee_bps(&10_001),
+        Err(Ok(Error::InvalidRatio))
+    );
+    // Upper bound itself is legal (100%).
+    client.set_fee_bps(&10_000);
+    assert_eq!(client.get_fee_bps(), 10_000);
+}
+
+#[test]
+fn test_set_fee_recipient_rejects_contract_address() {
+    let (_env, client, _merchant, _token) = setup(100);
+    assert_eq!(
+        client.try_set_fee_recipient(&client.address),
+        Err(Ok(Error::SelfTransfer))
+    );
+}
+
+#[test]
+fn test_set_fee_config_requires_admin_auth() {
+    let (env, client, _merchant, _token) = setup(100);
+
+    // No signatures: merchant.require_auth() aborts rather than returning an
+    // error, so the call surfaces as a host failure (see
+    // `test_set_yield_strategy_requires_auth`).
+    env.set_auths(&[]);
+    assert!(client.try_set_fee_bps(&100).is_err());
+    assert!(client
+        .try_set_fee_recipient(&Address::generate(&env))
+        .is_err());
+}
+
+#[test]
+fn test_fee_config_uninitialized_fails() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract_id = env.register(RefundVault, ());
+    let client = RefundVaultClient::new(&env, &contract_id);
+
+    assert_eq!(client.try_set_fee_bps(&100), Err(Ok(Error::NotInitialized)));
+    assert_eq!(
+        client.try_set_fee_recipient(&Address::generate(&env)),
+        Err(Ok(Error::NotInitialized))
+    );
+}
+
+#[test]
+fn test_fee_config_events_emitted() {
+    use soroban_sdk::testutils::Events;
+    use soroban_sdk::{vec, IntoVal, Map, Symbol, Val};
+
+    let (env, client, _merchant, _token) = setup(100);
+    let fee_collector = Address::generate(&env);
+
+    // Each change emits the full effective configuration, keyed by the field
+    // that changed. Events are read after each individual invocation.
+    client.set_fee_recipient(&fee_collector);
+    let mut recipient_data = Map::<Val, Val>::new(&env);
+    recipient_data.set(
+        Symbol::new(&env, "fee_bps").into_val(&env),
+        0u32.into_val(&env),
+    );
+    recipient_data.set(
+        Symbol::new(&env, "fee_recipient").into_val(&env),
+        fee_collector.clone().into_val(&env),
+    );
+    assert_eq!(
+        env.events().all().filter_by_contract(&client.address),
+        vec![
+            &env,
+            (
+                client.address.clone(),
+                (
+                    Symbol::new(&env, "fee_config_updated_event"),
+                    Symbol::new(&env, "fee_recipient"),
+                )
+                    .into_val(&env),
+                recipient_data.into_val(&env)
+            )
+        ]
+    );
+
+    client.set_fee_bps(&100);
+    let mut bps_data = Map::<Val, Val>::new(&env);
+    bps_data.set(
+        Symbol::new(&env, "fee_bps").into_val(&env),
+        100u32.into_val(&env),
+    );
+    bps_data.set(
+        Symbol::new(&env, "fee_recipient").into_val(&env),
+        fee_collector.clone().into_val(&env),
+    );
+    assert_eq!(
+        env.events().all().filter_by_contract(&client.address),
+        vec![
+            &env,
+            (
+                client.address.clone(),
+                (
+                    Symbol::new(&env, "fee_config_updated_event"),
+                    Symbol::new(&env, "fee_bps"),
+                )
+                    .into_val(&env),
+                bps_data.into_val(&env)
+            )
+        ]
+    );
 }
 
 #[test]

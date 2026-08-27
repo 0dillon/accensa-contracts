@@ -3,7 +3,7 @@
 use accensa_common::Error;
 use soroban_sdk::{
     contract, contractclient, contractevent, contractimpl, contractmeta, contracttype, token,
-    Address, BytesN, Env,
+    Address, BytesN, Env, Symbol,
 };
 
 contractmeta!(key = "name", val = "RefundVault");
@@ -25,6 +25,13 @@ pub enum DataKey {
     /// rejected. `0` (the default) means no deadline. Configured with the
     /// policy (propose/execute) and read at claim time in `refund`.
     RefundDeadline,
+    /// Refund fee, in basis points (1 bp = 0.01%), deducted from the amount
+    /// sent to a refund recipient and paid to the fee recipient. `0` (the
+    /// default) means no fee. Set via `set_fee_bps` and read at claim time.
+    FeeBps,
+    /// Address that receives the fee deducted from each refund. When unset,
+    /// the merchant (admin) receives the fee. Set via `set_fee_recipient`.
+    FeeRecipient,
     /// Cumulative refund record for a payment (new partial-refund layout).
     ///
     /// Stored under `RefundV2` so the decoder never attempts to interpret a
@@ -100,12 +107,31 @@ pub struct YieldInfo {
 pub struct RefundEvent {
     #[topic]
     pub payment_ref: BytesN<32>,
-    /// Amount refunded in this call.
+    /// Amount refunded in this call (before the fee is deducted).
     pub amount: i128,
+    /// The fee deducted from `amount` and paid to the fee recipient in this
+    /// call. `0` when no fee is configured.
+    pub fee: i128,
     /// Running cumulative total across all refunds for this payment.
     pub cumulative_refunded: i128,
     pub recipient: Address,
     pub ledger: u32,
+}
+
+/// Emitted when the admin changes the refund fee configuration (the basis-point
+/// rate or the fee recipient).
+///
+/// Topics: `("fee_config_updated_event", field)` where `field` is the symbol
+/// `fee_bps` or `fee_recipient`. The data map carries the *full* effective
+/// configuration after the change, so a reader reconstructing fee logic never
+/// needs to inspect two events.
+#[contractevent]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct FeeConfigUpdatedEvent {
+    #[topic]
+    pub field: Symbol,
+    pub fee_bps: u32,
+    pub fee_recipient: Address,
 }
 
 #[contractevent]
@@ -325,6 +351,39 @@ fn refund_record_ttl_extend_to(env: &Env, window: u32, paid_at_ledger: u32) -> u
         .max(TTL_EXTEND)
 }
 
+/// Refund fee in raw token units: `ceil(amount * fee_bps / 10_000)`.
+///
+/// Rounding **always rounds up**, so a remainder smaller than one smallest
+/// unit of the token is collected by the protocol (the fee recipient) rather
+/// than silently dropped.
+///
+/// The computation is overflow-free for every valid input (`amount > 0`,
+/// `fee_bps <= 10_000`) without host 256-bit arithmetic: decomposing
+/// `amount = q*10_000 + r` gives the equivalent `q*fee_bps + ceil(r*fee_bps/10_000)`,
+/// where `q*fee_bps <= q*10_000 <= amount` fits in i128 and the remainder term
+/// `r*fee_bps` never exceeds `9_999 * 10_000`.
+fn refund_fee(amount: i128, fee_bps: u32) -> i128 {
+    let q = amount / 10_000;
+    let r = amount % 10_000;
+    q * fee_bps as i128 + (r * fee_bps as i128 + 9_999) / 10_000
+}
+
+/// The address that receives refund fees: the explicitly-configured fee
+/// recipient when one has been set, otherwise the merchant (admin). Fees thus
+/// always have a deterministic destination and can never silently vanish into
+/// an unconfigured "dead" address.
+fn active_fee_recipient(env: &Env) -> Address {
+    env.storage()
+        .instance()
+        .get(&DataKey::FeeRecipient)
+        .unwrap_or_else(|| {
+            env.storage()
+                .instance()
+                .get(&DataKey::Admin)
+                .expect("refund requires an initialized admin")
+        })
+}
+
 #[contract]
 pub struct RefundVault;
 
@@ -526,7 +585,29 @@ impl RefundVault {
             return Err(Error::InsufficientFloat);
         }
 
-        token_client.transfer(&env.current_contract_address(), &recipient, &amount);
+        // Fee: a fraction (basis points) of the claim is diverted to the fee
+        // recipient; `recipient` receives the remainder. Total outflow is still
+        // exactly `amount`, so the float check above and the ceiling check
+        // against the payment amount are unchanged. The fee rounds *up* (the
+        // fractional-token remainder goes to the protocol).
+        let fee_bps: u32 = env.storage().instance().get(&DataKey::FeeBps).unwrap_or(0);
+        let fee = refund_fee(amount, fee_bps);
+        let payout = amount - fee;
+
+        let fee_recipient = if fee > 0 {
+            let r = active_fee_recipient(&env);
+            if r == env.current_contract_address() {
+                return Err(Error::SelfTransfer);
+            }
+            Some(r)
+        } else {
+            None
+        };
+
+        token_client.transfer(&env.current_contract_address(), &recipient, &payout);
+        if let Some(r) = fee_recipient {
+            token_client.transfer(&env.current_contract_address(), &r, &fee);
+        }
 
         let cumulative_refunded = previous_refunded + amount;
         let current_ledger = env.ledger().sequence();
@@ -558,6 +639,7 @@ impl RefundVault {
         RefundEvent {
             payment_ref,
             amount,
+            fee,
             cumulative_refunded,
             recipient: record.recipient,
             ledger: record.ledger,
@@ -720,6 +802,83 @@ impl RefundVault {
             .instance()
             .get(&DataKey::RefundDeadline)
             .unwrap_or(0)
+    }
+
+    // ── Fee configuration ──────────────────────────────────────────────────
+
+    /// Returns the refund fee in basis points (1 bp = 0.01%). `0` means no
+    /// fee is charged. Read-only.
+    pub fn get_fee_bps(env: Env) -> u32 {
+        env.storage().instance().get(&DataKey::FeeBps).unwrap_or(0)
+    }
+
+    /// Returns the explicitly-configured fee recipient, if one has been set.
+    /// When `None`, refund fees are paid to the merchant (admin). Read-only.
+    pub fn get_fee_recipient(env: Env) -> Option<Address> {
+        env.storage().instance().get(&DataKey::FeeRecipient)
+    }
+
+    /// Set the refund fee in basis points (1 bp = 0.01%, so 100 = 1%).
+    /// Deducted from the amount sent to a refund recipient on every claim.
+    /// Must be within `0..=10_000`. Only callable by admin.
+    pub fn set_fee_bps(env: Env, bps: u32) -> Result<(), Error> {
+        if bps > 10_000 {
+            return Err(Error::InvalidRatio);
+        }
+
+        let merchant: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .ok_or(Error::NotInitialized)?;
+        merchant.require_auth();
+
+        env.storage().instance().set(&DataKey::FeeBps, &bps);
+
+        let fee_recipient = active_fee_recipient(&env);
+        FeeConfigUpdatedEvent {
+            field: Symbol::new(&env, "fee_bps"),
+            fee_bps: bps,
+            fee_recipient,
+        }
+        .publish(&env);
+
+        env.storage()
+            .instance()
+            .extend_ttl(TTL_THRESHOLD, TTL_EXTEND);
+        Ok(())
+    }
+
+    /// Set the address that receives the fee deducted from each refund. The
+    /// recipient must not be the vault's own address. Only callable by admin.
+    pub fn set_fee_recipient(env: Env, recipient: Address) -> Result<(), Error> {
+        if recipient == env.current_contract_address() {
+            return Err(Error::SelfTransfer);
+        }
+
+        let merchant: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .ok_or(Error::NotInitialized)?;
+        merchant.require_auth();
+
+        env.storage()
+            .instance()
+            .set(&DataKey::FeeRecipient, &recipient);
+
+        let fee_bps: u32 = env.storage().instance().get(&DataKey::FeeBps).unwrap_or(0);
+        FeeConfigUpdatedEvent {
+            field: Symbol::new(&env, "fee_recipient"),
+            fee_bps,
+            fee_recipient: recipient.clone(),
+        }
+        .publish(&env);
+
+        env.storage()
+            .instance()
+            .extend_ttl(TTL_THRESHOLD, TTL_EXTEND);
+        Ok(())
     }
 
     // ── Yield strategy management ──────────────────────────────────────────
