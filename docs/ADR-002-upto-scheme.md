@@ -148,7 +148,7 @@ refunds. Applying the same approach:
 ### Costs — state these plainly
 - **Two on-chain invocations per metered payment instead of one.** For an RFP whose
   premise is that sub-cent fees make per-request payment viable, roughly doubling
-  settlement cost is a real objection and must be priced, not waved past.
+  settlement cost is a real objection and must be priced, not waved past. *(Note: Measurement of this cost is currently pending the resolution of Issue #65 and #66; benchmarking infrastructure is in place to determine the true economic impact once the implementation exists.)*
 - **It ships a Soroban contract**, which expands the security review from "an off-chain
   service and its cryptographic validation" to a contract audit. The RFP's costing note
   assumes v1 ships no new contract; proposing this changes that line item.
@@ -172,8 +172,9 @@ ADR.**
    sub-invocation. This needs confirming against Soroban's authorization semantics — if
    it requires two separate buyer signatures, the UX argument for this design weakens
    considerably.
-3. **What does `settle` cost**, and does the pair stay within per-transaction CPU,
+3. **[RESOLVED] What does `settle` cost**, and does the pair stay within per-transaction CPU,
    memory, read, and write limits under realistic load?
+   - **Resolution:** Measurement is currently blocked by Issue #65 (`upto` contract implementation). A benchmarking skeleton and methodology have been defined in [BENCHMARKS.md](BENCHMARKS.md), which will record the `authorize`, `settle`, and pair cost against exact limits once the implementation is available.
 4. **Sequence-number contention.** Agent traffic is bursty and the facilitator submits
    every settlement. Channel accounts are the standard answer; that needs designing, not
    naming.

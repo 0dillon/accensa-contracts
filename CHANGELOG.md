@@ -10,12 +10,39 @@ breaking changes bump the **minor** version, and they are called out as such.
 
 ### Added
 
-- **Holistic paused-state invariant test for `RefundVault`** (issue #80). A
-  parameterized test initializes and funds the vault, strictly pauses it, then
-  replays every state-changing operation (`deposit`, `refund`, `withdraw`, and
-  the yield surface), asserting each is rejected with `Error::Paused` and
-  mutates no balance, refund record or yield-accounting state. It then unpauses
-  and proves the exact same operations resume their normal outcomes.
+- **Admin events for `RefundVault`** (issue #114): `PauseEvent` and
+  `UnpauseEvent` carry the ledger sequence so a pause window is reconstructible
+  from the event log alone, and `RefundWindowUpdatedEvent` carries both the
+  previous and the new window (old value captured before overwrite). All three
+  follow the existing `#[contractevent]` convention and are documented in
+  `docs/EVENTS.md` and the README event table.
+- **Trustworthy build provenance in `contractmeta`** (issue #164): both
+  `build.rs` files now fail loudly (a `cargo:warning`) when the git commit hash
+  cannot be resolved instead of silently embedding `"unknown"`, embed a new
+  `commit_dirty` key computed from `git status --porcelain`, and re-run on
+  `.git/HEAD`, the resolved branch ref, the index and `src/` so a cached build
+  cannot report a stale hash. A `test_commit_meta_is_well_formed` test in both
+  crates pins the embedded commit to 40 hex characters.
+
+### Changed
+
+- **`RefundVault` token generality is documented and pinned** (issue #166): the
+  vault treats all amounts as raw integer units in the token's smallest unit and
+  performs no decimal arithmetic, so any SEP-41 precision behaves identically.
+  New `token_agnostic_tests.rs` proves the full lifecycle (deposit, refund,
+  withdraw, float-bound check) against 0- and 2-decimal tokens, including the
+  smallest unit, i128 extremes, and a refund exactly equal to the float.
+  Documented in `docs/storage-audit.md` (Token Generality) and
+  `docs/contracts.mdx`.
+
+### Security
+
+- **Merchant-only float funding is a documented guarantee** (issue #157):
+  `docs/SECURITY_MODEL.md` now states it explicitly — only the merchant's own
+  funds are ever at stake, a third party cannot contribute float the merchant
+  has not authorised, and `withdraw` stays merchant-only. The existing
+  `test_deposit_from_non_merchant_fails` pins the behaviour and is annotated as
+  deliberate.
 
 ## [0.3.0] — 2026-08-26
 
