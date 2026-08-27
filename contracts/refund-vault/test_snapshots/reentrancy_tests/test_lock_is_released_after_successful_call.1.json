@@ -62,7 +62,7 @@
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM"
                 },
                 {
-                  "i128": "500000"
+                  "i128": "1000000"
                 }
               ]
             }
@@ -81,7 +81,7 @@
                       "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4"
                     },
                     {
-                      "i128": "500000"
+                      "i128": "1000000"
                     }
                   ]
                 }
@@ -102,19 +102,19 @@
               "function_name": "refund",
               "args": [
                 {
-                  "bytes": "0707070707070707070707070707070707070707070707070707070707070707"
+                  "bytes": "0909090909090909090909090909090909090909090909090909090909090909"
                 },
                 {
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAK3IM"
                 },
                 {
-                  "i128": "100"
+                  "i128": "1000"
                 },
                 {
                   "u32": 0
                 },
                 {
-                  "i128": "300"
+                  "i128": "1000"
                 }
               ]
             }
@@ -133,19 +133,19 @@
               "function_name": "refund",
               "args": [
                 {
-                  "bytes": "0707070707070707070707070707070707070707070707070707070707070707"
+                  "bytes": "0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a"
                 },
                 {
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAK3IM"
                 },
                 {
-                  "i128": "150"
+                  "i128": "2000"
                 },
                 {
                   "u32": 0
                 },
                 {
-                  "i128": "300"
+                  "i128": "2000"
                 }
               ]
             }
@@ -161,22 +161,13 @@
           "function": {
             "contract_fn": {
               "contract_address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4",
-              "function_name": "refund",
+              "function_name": "withdraw",
               "args": [
                 {
-                  "bytes": "0707070707070707070707070707070707070707070707070707070707070707"
+                  "i128": "500"
                 },
                 {
-                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAK3IM"
-                },
-                {
-                  "i128": "50"
-                },
-                {
-                  "u32": 0
-                },
-                {
-                  "i128": "300"
+                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM"
                 }
               ]
             }
@@ -184,9 +175,7 @@
           "sub_invocations": []
         }
       ]
-    ],
-    [],
-    []
+    ]
   ],
   "ledger": {
     "protocol_version": 27,
@@ -352,7 +341,7 @@
                     "symbol": "RefundV2"
                   },
                   {
-                    "bytes": "0707070707070707070707070707070707070707070707070707070707070707"
+                    "bytes": "0909090909090909090909090909090909090909090909090909090909090909"
                   }
                 ]
               },
@@ -364,7 +353,7 @@
                       "symbol": "amount_refunded"
                     },
                     "val": {
-                      "i128": "300"
+                      "i128": "1000"
                     }
                   },
                   {
@@ -388,7 +377,75 @@
                       "symbol": "payment_amount"
                     },
                     "val": {
-                      "i128": "300"
+                      "i128": "1000"
+                    }
+                  },
+                  {
+                    "key": {
+                      "symbol": "recipient"
+                    },
+                    "val": {
+                      "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAK3IM"
+                    }
+                  }
+                ]
+              }
+            }
+          },
+          "ext": "v0"
+        },
+        "live_until": 4095
+      },
+      {
+        "entry": {
+          "last_modified_ledger_seq": 0,
+          "data": {
+            "contract_data": {
+              "ext": "v0",
+              "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4",
+              "key": {
+                "vec": [
+                  {
+                    "symbol": "RefundV2"
+                  },
+                  {
+                    "bytes": "0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a"
+                  }
+                ]
+              },
+              "durability": "persistent",
+              "val": {
+                "map": [
+                  {
+                    "key": {
+                      "symbol": "amount_refunded"
+                    },
+                    "val": {
+                      "i128": "2000"
+                    }
+                  },
+                  {
+                    "key": {
+                      "symbol": "ledger"
+                    },
+                    "val": {
+                      "u32": 0
+                    }
+                  },
+                  {
+                    "key": {
+                      "symbol": "paid_at_ledger"
+                    },
+                    "val": {
+                      "u32": 0
+                    }
+                  },
+                  {
+                    "key": {
+                      "symbol": "payment_amount"
+                    },
+                    "val": {
+                      "i128": "2000"
                     }
                   },
                   {
@@ -504,7 +561,7 @@
                       "symbol": "amount"
                     },
                     "val": {
-                      "i128": "500000"
+                      "i128": "500"
                     }
                   },
                   {
@@ -556,7 +613,7 @@
                       "symbol": "amount"
                     },
                     "val": {
-                      "i128": "499700"
+                      "i128": "996500"
                     }
                   },
                   {
@@ -608,7 +665,7 @@
                       "symbol": "amount"
                     },
                     "val": {
-                      "i128": "300"
+                      "i128": "3000"
                     }
                   },
                   {
@@ -754,5 +811,67 @@
       }
     ]
   },
-  "events": []
+  "events": [
+    {
+      "event": {
+        "ext": "v0",
+        "contract_id": "CBUSYNQKASUYFWYC3M2GUEDMX4AIVWPALDBYJPNK6554BREHTGZ2IUNF",
+        "type_": "contract",
+        "body": {
+          "v0": {
+            "topics": [
+              {
+                "symbol": "transfer"
+              },
+              {
+                "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4"
+              },
+              {
+                "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM"
+              },
+              {
+                "string": "aaa:GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAGO6V"
+              }
+            ],
+            "data": {
+              "i128": "500"
+            }
+          }
+        }
+      },
+      "failed_call": false
+    },
+    {
+      "event": {
+        "ext": "v0",
+        "contract_id": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4",
+        "type_": "contract",
+        "body": {
+          "v0": {
+            "topics": [
+              {
+                "symbol": "withdraw_event"
+              },
+              {
+                "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM"
+              }
+            ],
+            "data": {
+              "map": [
+                {
+                  "key": {
+                    "symbol": "amount"
+                  },
+                  "val": {
+                    "i128": "500"
+                  }
+                }
+              ]
+            }
+          }
+        }
+      },
+      "failed_call": false
+    }
+  ]
 }
