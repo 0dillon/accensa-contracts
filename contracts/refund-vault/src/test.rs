@@ -2,7 +2,7 @@
 
 use super::*;
 use soroban_sdk::{
-    testutils::{Address as _, Ledger},
+    testutils::{storage::Persistent as _, Address as _, Ledger},
     token::{StellarAssetClient, TokenClient},
     Address, Env,
 };
@@ -143,6 +143,71 @@ fn test_zero_window_disables_expiry() {
     let buyer = Address::generate(&env);
     client.refund(&payment_ref, &buyer, &100, &0, &100);
     assert!(client.get_refund(&payment_ref).is_some());
+}
+
+/// The `RefundV2` guard entry's TTL must be sized to the refund window, not a
+/// flat `TTL_EXTEND` (~30 days): otherwise a window longer than that flat
+/// interval can outlive the guard that is supposed to police it, so the
+/// entry can go stale (and become eligible for archival) while `refund`
+/// would still accept further calls for that payment on policy grounds.
+/// See `refund_record_ttl_extend_to`.
+#[test]
+fn test_long_window_extends_guard_past_flat_ttl() {
+    let window = TTL_EXTEND * 3;
+    let (env, client, merchant, _token) = setup(window);
+    client.deposit(&merchant, &500_000);
+
+    let payment_ref = BytesN::from_array(&env, &[10u8; 32]);
+    let buyer = Address::generate(&env);
+    client.refund(&payment_ref, &buyer, &100_000, &0, &300_000);
+
+    let ttl_after_refund = env.as_contract(&client.address, || {
+        env.storage()
+            .persistent()
+            .get_ttl(&DataKey::RefundV2(payment_ref.clone()))
+    });
+    assert!(
+        ttl_after_refund > TTL_EXTEND,
+        "guard TTL ({ttl_after_refund}) was not sized to the window ({window}); \
+         it must outlast the flat TTL_EXTEND ({TTL_EXTEND}) whenever the window does"
+    );
+
+    // Jump past where the old flat TTL_EXTEND would have left the guard
+    // entry eligible for archival, but still well inside the window.
+    env.ledger()
+        .with_mut(|li| li.sequence_number = TTL_EXTEND + 10_000);
+
+    // A further partial refund for the same payment must still see the prior
+    // cumulative total: the guard entry must not have gone missing.
+    client.refund(&payment_ref, &buyer, &50_000, &0, &300_000);
+    let record = client.get_refund(&payment_ref).unwrap();
+    assert_eq!(record.amount_refunded, 150_000);
+}
+
+/// `window == 0` means "no time bound" for `refund` itself (see
+/// `test_zero_window_disables_expiry`); the guard entry's TTL must match
+/// that by extending to the network's actual maximum TTL rather than the
+/// flat `TTL_EXTEND`, so an unbounded refund policy is never quietly capped
+/// by the guard aging out first.
+#[test]
+fn test_zero_window_extends_guard_to_max_ttl() {
+    let (env, client, merchant, _token) = setup(0);
+    client.deposit(&merchant, &500_000);
+
+    let payment_ref = BytesN::from_array(&env, &[11u8; 32]);
+    let buyer = Address::generate(&env);
+    client.refund(&payment_ref, &buyer, &100_000, &0, &300_000);
+
+    let ttl_after_refund = env.as_contract(&client.address, || {
+        env.storage()
+            .persistent()
+            .get_ttl(&DataKey::RefundV2(payment_ref.clone()))
+    });
+    assert!(
+        ttl_after_refund > TTL_EXTEND * 2,
+        "guard TTL ({ttl_after_refund}) for an unbounded window was not \
+         extended past the flat TTL_EXTEND ({TTL_EXTEND})"
+    );
 }
 
 #[test]
