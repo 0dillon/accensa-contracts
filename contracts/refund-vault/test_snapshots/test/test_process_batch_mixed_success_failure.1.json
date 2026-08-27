@@ -112,6 +112,9 @@
                 },
                 {
                   "u32": 0
+                },
+                {
+                  "i128": "50000"
                 }
               ]
             }
@@ -151,6 +154,14 @@
                         },
                         {
                           "key": {
+                            "symbol": "payment_amount"
+                          },
+                          "val": {
+                            "i128": "50000"
+                          }
+                        },
+                        {
+                          "key": {
                             "symbol": "payment_ref"
                           },
                           "val": {
@@ -183,6 +194,14 @@
                           },
                           "val": {
                             "u32": 0
+                          }
+                        },
+                        {
+                          "key": {
+                            "symbol": "payment_amount"
+                          },
+                          "val": {
+                            "i128": "100000"
                           }
                         },
                         {
@@ -355,7 +374,7 @@
               "key": {
                 "vec": [
                   {
-                    "symbol": "Refund"
+                    "symbol": "RefundV2"
                   },
                   {
                     "bytes": "0101010101010101010101010101010101010101010101010101010101010101"
@@ -367,7 +386,7 @@
                 "map": [
                   {
                     "key": {
-                      "symbol": "amount"
+                      "symbol": "amount_refunded"
                     },
                     "val": {
                       "i128": "50000"
@@ -379,6 +398,22 @@
                     },
                     "val": {
                       "u32": 0
+                    }
+                  },
+                  {
+                    "key": {
+                      "symbol": "paid_at_ledger"
+                    },
+                    "val": {
+                      "u32": 0
+                    }
+                  },
+                  {
+                    "key": {
+                      "symbol": "payment_amount"
+                    },
+                    "val": {
+                      "i128": "50000"
                     }
                   },
                   {
@@ -407,7 +442,7 @@
               "key": {
                 "vec": [
                   {
-                    "symbol": "Refund"
+                    "symbol": "RefundV2"
                   },
                   {
                     "bytes": "0202020202020202020202020202020202020202020202020202020202020202"
@@ -419,7 +454,7 @@
                 "map": [
                   {
                     "key": {
-                      "symbol": "amount"
+                      "symbol": "amount_refunded"
                     },
                     "val": {
                       "i128": "100000"
@@ -431,6 +466,22 @@
                     },
                     "val": {
                       "u32": 0
+                    }
+                  },
+                  {
+                    "key": {
+                      "symbol": "paid_at_ledger"
+                    },
+                    "val": {
+                      "u32": 0
+                    }
+                  },
+                  {
+                    "key": {
+                      "symbol": "payment_amount"
+                    },
+                    "val": {
+                      "i128": "100000"
                     }
                   },
                   {
