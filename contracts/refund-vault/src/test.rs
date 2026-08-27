@@ -431,15 +431,10 @@ fn contract_outcome<T>(
     }
 }
 
-/// One state-changing operation of the vault's public surface, parameterized
-/// so the exact same call can be replayed while paused and after unpause.
+/// One state-changing operation of the vault's public surface.
 struct PausedSurfaceOp<'a> {
     name: &'static str,
     invoke: &'a dyn Fn() -> Result<(), Error>,
-    /// Outcome once the vault is unpaused. For the core surface this is the
-    /// full success path; for the yield surface (no strategy configured here)
-    /// it is the first post-pause gate, proving the pause check was lifted.
-    unpaused_outcome: Result<(), Error>,
 }
 
 #[test]
@@ -457,34 +452,28 @@ fn test_paused_state_blocks_and_preserves_every_operation() {
         PausedSurfaceOp {
             name: "deposit",
             invoke: &|| contract_outcome(client.try_deposit(&merchant, &100_000)),
-            unpaused_outcome: Ok(()),
         },
         PausedSurfaceOp {
             name: "refund",
             invoke: &|| {
                 contract_outcome(client.try_refund(&payment_ref, &buyer, &100_000, &0, &100_000))
             },
-            unpaused_outcome: Ok(()),
         },
         PausedSurfaceOp {
             name: "withdraw",
             invoke: &|| contract_outcome(client.try_withdraw(&100_000, &merchant)),
-            unpaused_outcome: Ok(()),
         },
         PausedSurfaceOp {
             name: "deploy_to_yield",
             invoke: &|| contract_outcome(client.try_deploy_to_yield(&100_000)),
-            unpaused_outcome: Err(Error::StrategyNotSet),
         },
         PausedSurfaceOp {
             name: "withdraw_from_yield",
             invoke: &|| contract_outcome(client.try_withdraw_from_yield(&100_000)),
-            unpaused_outcome: Err(Error::StrategyNotSet),
         },
         PausedSurfaceOp {
             name: "harvest_yield",
             invoke: &|| contract_outcome(client.try_harvest_yield()),
-            unpaused_outcome: Err(Error::StrategyNotSet),
         },
     ];
 
@@ -536,16 +525,28 @@ fn test_paused_state_blocks_and_preserves_every_operation() {
         );
     }
 
-    // Unpause verification: the exact same operations resume normal behavior.
+    // Unpause verification: each operation must clear the pause gate. The
+    // core operations use fresh calls because replaying the same refund after
+    // a successful call would correctly exceed its payment ceiling.
     client.unpause();
-    for op in &operations {
-        assert_eq!(
-            (op.invoke)(),
-            op.unpaused_outcome,
-            "{} did not resume its normal outcome after unpause",
-            op.name
-        );
-    }
+    assert_eq!(contract_outcome(client.try_deposit(&merchant, &100_000)), Ok(()));
+    assert_eq!(
+        contract_outcome(client.try_refund(&payment_ref, &buyer, &100_000, &0, &100_000)),
+        Ok(())
+    );
+    assert_eq!(contract_outcome(client.try_withdraw(&100_000, &merchant)), Ok(()));
+    assert_eq!(
+        contract_outcome(client.try_deploy_to_yield(&100_000)),
+        Err(Error::StrategyNotSet)
+    );
+    assert_eq!(
+        contract_outcome(client.try_withdraw_from_yield(&100_000)),
+        Err(Error::StrategyNotSet)
+    );
+    assert_eq!(
+        contract_outcome(client.try_harvest_yield()),
+        Err(Error::StrategyNotSet)
+    );
 
     // The resumed core operations really moved the float: +deposit -refund -withdraw.
     assert_eq!(
