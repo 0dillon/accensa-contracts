@@ -249,7 +249,8 @@ fn execute(
             }
             Op::SetWindow { window } => {
                 // propose_policy is not gated on pause; execute requires timelock.
-                let _ = client.try_propose_policy(window);
+                // The fuzz model does not model deadlines, so no deadline (0) is proposed.
+                let _ = client.try_propose_policy(window, &0);
                 model.window = *window;
             }
             Op::Deposit { amount } => {
@@ -378,7 +379,7 @@ fn execute(
                         }
                     }
                     Err(Ok(Error::InvalidAmount)) => {
-                        if !(*amount <= 0) {
+                        if *amount > 0 {
                             failures.push(format!("refund of {amount} rejected as invalid amount"));
                         }
                     }
@@ -460,7 +461,7 @@ fn execute(
                         }
                     }
                     Err(Ok(Error::InvalidAmount)) => {
-                        if !(*amount <= 0) {
+                        if *amount > 0 {
                             failures
                                 .push(format!("withdraw of {amount} rejected as invalid amount"));
                         }

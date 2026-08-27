@@ -10,6 +10,19 @@ breaking changes bump the **minor** version, and they are called out as such.
 
 ### Added
 
+- **Refund expiration deadline for `RefundVault`**: the refund policy now
+  carries a wall-clock deadline (Unix timestamp) alongside the ledger-based
+  window — `propose_policy(ledgers, deadline)` configures it (subject to the
+  same timelock) and `execute_policy` applies it. `refund` rejects claims whose
+  current ledger timestamp is strictly past the deadline with a new
+  `RefundExpired` error (code 23); a deadline of `0` disables expiry. The new
+  `get_refund_deadline()` getter exposes the configured deadline. This is a
+  contract-source change: the `propose_policy` signature is extended, so it is
+  a **breaking change** for clients; `initialize` is unchanged and existing
+  deployments default to no expiration (deadline `0`), keeping them behaviour-
+  and storage-compatible. Deadline boundary semantics are pinned by unit tests
+  that manipulate the mock ledger timestamp.
+
 - **Admin events for `RefundVault`** (issue #114): `PauseEvent` and
   `UnpauseEvent` carry the ledger sequence so a pause window is reconstructible
   from the event log alone, and `RefundWindowUpdatedEvent` carries both the

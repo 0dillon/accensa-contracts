@@ -103,6 +103,9 @@
               "args": [
                 {
                   "u32": 200
+                },
+                {
+                  "u64": "0"
                 }
               ]
             }
@@ -285,6 +288,30 @@
                       },
                       "val": {
                         "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM"
+                      }
+                    },
+                    {
+                      "key": {
+                        "vec": [
+                          {
+                            "symbol": "ReentrancyLock"
+                          }
+                        ]
+                      },
+                      "val": {
+                        "bool": false
+                      }
+                    },
+                    {
+                      "key": {
+                        "vec": [
+                          {
+                            "symbol": "RefundDeadline"
+                          }
+                        ]
+                      },
+                      "val": {
+                        "u64": "0"
                       }
                     },
                     {

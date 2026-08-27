@@ -21,6 +21,10 @@ pub enum DataKey {
     Admin,
     Token,
     RefundWindow,
+    /// Wall-clock deadline (Unix timestamp) after which refund claims are
+    /// rejected. `0` (the default) means no deadline. Configured with the
+    /// policy (propose/execute) and read at claim time in `refund`.
+    RefundDeadline,
     /// Cumulative refund record for a payment (new partial-refund layout).
     ///
     /// Stored under `RefundV2` so the decoder never attempts to interpret a
@@ -69,6 +73,9 @@ pub struct RefundRecord {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PolicyProposal {
     pub window: u32,
+    /// Wall-clock deadline (Unix timestamp) after which refund claims are
+    /// rejected. `0` disables the deadline ("no expiry").
+    pub deadline: u64,
     pub proposed_at_ledger: u32,
 }
 
@@ -185,6 +192,7 @@ pub struct YieldHarvestedEvent {
 pub struct PolicyProposedEvent {
     #[topic]
     pub window: u32,
+    pub deadline: u64,
     pub proposed_at_ledger: u32,
     pub execute_after_ledger: u32,
 }
@@ -194,6 +202,7 @@ pub struct PolicyProposedEvent {
 pub struct PolicyExecutedEvent {
     #[topic]
     pub window: u32,
+    pub deadline: u64,
 }
 
 /// Interface for external yield-generating strategies (e.g., Soroban lending protocols).
@@ -479,6 +488,18 @@ impl RefundVault {
             }
         }
 
+        // Policy deadline: a wall-clock timestamp configured with the policy.
+        // `0` (or unset) means no deadline. Expiry is strictly past the
+        // deadline, so a claim landing exactly on the deadline still succeeds.
+        let deadline: u64 = env
+            .storage()
+            .instance()
+            .get(&DataKey::RefundDeadline)
+            .unwrap_or(0);
+        if deadline > 0 && env.ledger().timestamp() > deadline {
+            return Err(Error::RefundExpired);
+        }
+
         // Ceiling check: cumulative refunds must not exceed the original amount.
         // The ceiling is read from the (re)stored record, freshly minted on the
         // first partial for this payment.
@@ -596,11 +617,12 @@ impl RefundVault {
         Ok(())
     }
 
-    /// Propose a new refund window. The change is not applied immediately;
-    /// the admin must call `execute_policy` after the timelock (17,280 ledgers,
-    /// ~24 hours) has elapsed. Proposing a new policy overwrites any existing
-    /// pending proposal.
-    pub fn propose_policy(env: Env, ledgers: u32) -> Result<(), Error> {
+    /// Propose a new refund policy: a window (in ledgers) and a wall-clock
+    /// deadline (Unix timestamp, `0` = no deadline). The change is not applied
+    /// immediately; the admin must call `execute_policy` after the timelock
+    /// (17,280 ledgers, ~24 hours) has elapsed. Proposing a new policy
+    /// overwrites any existing pending proposal.
+    pub fn propose_policy(env: Env, ledgers: u32, deadline: u64) -> Result<(), Error> {
         let merchant: Address = env
             .storage()
             .instance()
@@ -611,6 +633,7 @@ impl RefundVault {
         let current_ledger = env.ledger().sequence();
         let proposal = PolicyProposal {
             window: ledgers,
+            deadline,
             proposed_at_ledger: current_ledger,
         };
 
@@ -620,6 +643,7 @@ impl RefundVault {
 
         PolicyProposedEvent {
             window: ledgers,
+            deadline,
             proposed_at_ledger: current_ledger,
             execute_after_ledger: current_ledger + POLICY_TIMELOCK,
         }
@@ -632,7 +656,8 @@ impl RefundVault {
     }
 
     /// Execute a pending policy change. Fails if no policy is pending or if
-    /// the timelock has not yet expired.
+    /// the timelock has not yet expired. Applies both the new window and the
+    /// new deadline.
     pub fn execute_policy(env: Env) -> Result<(), Error> {
         let merchant: Address = env
             .storage()
@@ -655,10 +680,14 @@ impl RefundVault {
         env.storage()
             .instance()
             .set(&DataKey::RefundWindow, &proposal.window);
+        env.storage()
+            .instance()
+            .set(&DataKey::RefundDeadline, &proposal.deadline);
         env.storage().instance().remove(&DataKey::PendingPolicy);
 
         PolicyExecutedEvent {
             window: proposal.window,
+            deadline: proposal.deadline,
         }
         .publish(&env);
 
@@ -682,6 +711,15 @@ impl RefundVault {
     /// Returns the policy timelock delay in ledgers (read-only).
     pub fn get_policy_timelock() -> u32 {
         POLICY_TIMELOCK
+    }
+
+    /// Returns the current policy deadline as a Unix timestamp (read-only).
+    /// `0` means no deadline is configured.
+    pub fn get_refund_deadline(env: Env) -> u64 {
+        env.storage()
+            .instance()
+            .get(&DataKey::RefundDeadline)
+            .unwrap_or(0)
     }
 
     // ── Yield strategy management ──────────────────────────────────────────

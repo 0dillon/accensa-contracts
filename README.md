@@ -115,10 +115,11 @@ Holds merchant float and executes refunds bounded by an on-chain policy.
 | `deposit(from, amount)` | Merchant tops up float. |
 | `refund(payment_ref, recipient, amount, paid_at_ledger, payment_amount)` | Refunds part or all of a payment, subject to policy. `amount` is added to the cumulative total for `payment_ref`; `payment_amount` is the original payment amount and the hard ceiling on cumulative refunds. |
 | `withdraw(amount, to)` | Merchant withdraws float. |
-| `propose_policy(ledgers)` | Proposes a new refund window; subject to timelock. |
-| `execute_policy()` | Executes a pending policy change after the timelock. |
+| `propose_policy(ledgers, deadline)` | Proposes a new refund policy — a window (in ledgers) plus a wall-clock deadline (Unix timestamp; `0` = no deadline); subject to timelock. |
+| `execute_policy()` | Executes a pending policy change after the timelock. Applies both the new window and the new deadline. |
 | `get_pending_policy()` | Returns the current pending policy proposal, if any. |
 | `get_policy_timelock()` | Returns the policy timelock delay in ledgers (read-only). |
+| `get_refund_deadline()` | Returns the configured policy deadline as a Unix timestamp (`0` = none, read-only). |
 | `get_refund(payment_ref) -> Option<RefundRecord>` | Looks up a refund. |
 | `pause()` | Pauses operations for emergency stops. Merchant auth required. |
 | `unpause()` | Resumes paused operations. Merchant auth required. |
@@ -134,6 +135,8 @@ Emits:
 | `PauseEvent` | `("pause_event", ledger)` | — |
 | `UnpauseEvent` | `("unpause_event", ledger)` | — |
 | `RefundWindowUpdatedEvent` | `("refund_window_updated_event", previous_window, new_window)` | — |
+| `PolicyProposedEvent` | `("policy_proposed_event", window)` | `deadline`, `proposed_at_ledger`, `execute_after_ledger` |
+| `PolicyExecutedEvent` | `("policy_executed_event", window)` | `deadline` |
 
 Each partial refund emits its own `RefundEvent` carrying **both** the amount for
 that call (`amount`) and the running total (`cumulative_refunded`), so an indexer
@@ -154,6 +157,9 @@ Enforced invariants, each covered by a test:
 - **Window from the original payment** — the refund window is measured from
   `paid_at_ledger` (the original payment), never extended by a partial
   (`WindowExpired`).
+- **Deadline from the policy** — refunds stop being claimable once the
+  configured wall-clock deadline has strictly passed (`RefundExpired`); a
+  deadline of `0` disables expiry.
 - **Float-bounded** — a refund can never exceed vault balance (`InsufficientFloat`).
 - **Merchant-only** — every state-changing call requires merchant auth
   (`Unauthorized`); the admin may be a contract account (see
@@ -188,6 +194,7 @@ contracts instead of per-contract tables.
 | 17 | `NothingToHarvest` | Nothing to harvest from the yield strategy. |
 | 18 | `InvalidRatio` | A configured ratio was out of range. |
 | 19 | `ExceedsPayment` | Cumulative refunds would exceed the payment ceiling. |
+| 23 | `RefundExpired` | A refund claim was submitted after the policy deadline passed. |
 | 100 | `BatchNotFound` | The requested batch does not exist (or was pruned). |
 | 101 | `BatchTooLarge` | A batch larger than `MAX_BATCH_SIZE` was submitted. |
 

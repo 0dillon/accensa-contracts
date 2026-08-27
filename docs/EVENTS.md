@@ -83,3 +83,19 @@ Emitted when the merchant changes the refund window.
 - **Data Map**: *(empty)*
 
 Both values are carried so a reader can tell whether a refund rejected at a given ledger was rejected under the old rule or the new one.
+
+### 9. `PolicyProposedEvent`
+Emitted when the merchant proposes a new refund policy (window and deadline). The change is not applied until the matching `PolicyExecutedEvent`.
+
+- **Topics**: `("policy_proposed_event", window: u32)`
+- **Data Map**:
+  - `deadline` (`u64`): The wall-clock deadline (Unix timestamp) after which refund claims are rejected; `0` disables the deadline.
+  - `proposed_at_ledger` (`u32`): The ledger sequence when the proposal was made.
+  - `execute_after_ledger` (`u32`): The earliest ledger at which `execute_policy` may succeed (proposal + timelock).
+
+### 10. `PolicyExecutedEvent`
+Emitted when the merchant executes a pending policy change after the timelock.
+
+- **Topics**: `("policy_executed_event", window: u32)`
+- **Data Map**:
+  - `deadline` (`u64`): The wall-clock deadline (Unix timestamp) now in force; `0` means no deadline.

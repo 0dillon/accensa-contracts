@@ -104,6 +104,9 @@
               "args": [
                 {
                   "u32": 20000
+                },
+                {
+                  "u64": "0"
                 }
               ]
             }
@@ -377,7 +380,7 @@
           },
           "ext": "v0"
         },
-        "live_until": 21675
+        "live_until": 535980
       },
       {
         "entry": {
@@ -404,6 +407,30 @@
                       },
                       "val": {
                         "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM"
+                      }
+                    },
+                    {
+                      "key": {
+                        "vec": [
+                          {
+                            "symbol": "ReentrancyLock"
+                          }
+                        ]
+                      },
+                      "val": {
+                        "bool": false
+                      }
+                    },
+                    {
+                      "key": {
+                        "vec": [
+                          {
+                            "symbol": "RefundDeadline"
+                          }
+                        ]
+                      },
+                      "val": {
+                        "u64": "0"
                       }
                     },
                     {

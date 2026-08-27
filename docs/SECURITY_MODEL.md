@@ -115,6 +115,7 @@ re-entrancy surface. See [AUDIT.md](AUDIT.md) §2 and §5 for the full treatment
 ### Window Expiry Evasion
 - **Threat:** An attacker attempts to process a refund after the designated refund window has expired.
 - **Mitigation:** The contract enforces the refund window by strictly comparing the current ledger sequence against the `paid_at_ledger` plus the `RefundWindow`. If the threshold is crossed, the transaction is rejected with a `WindowExpired` error.
+- **Wall-clock deadline:** The policy may additionally carry a Unix-timestamp `deadline`. `refund` rejects any claim whose current ledger timestamp is *strictly past* the deadline with `RefundExpired` (a claim landing exactly on the deadline still succeeds, mirroring the window arithmetic). A deadline of `0` (the default) disables expiry. Because the two bounds are independent, a claim must pass *both* — a window still open in ledger terms is not sufficient once the wall-clock deadline has passed.
 
 ### Float Draining (Negative/Zero Amounts)
 - **Threat:** An attacker tries to refund a negative amount to cause an underflow or steal funds.

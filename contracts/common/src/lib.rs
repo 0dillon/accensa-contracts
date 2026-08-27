@@ -68,6 +68,8 @@ pub enum Error {
     SelfTransfer = 21,
     /// An attempt to change the vault's token address was made while the vault holds a non-zero token balance.
     FloatNotEmpty = 22,
+    /// A refund claim was submitted after the policy deadline timestamp passed.
+    RefundExpired = 23,
     /// The requested batch does not exist (or was pruned).
     BatchNotFound = 100,
     /// A batch larger than `MAX_BATCH_SIZE` was submitted.

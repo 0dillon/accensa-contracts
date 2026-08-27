@@ -260,7 +260,7 @@ fn test_set_refund_window_takes_effect() {
         Err(Ok(Error::WindowExpired))
     );
 
-    client.propose_policy(&1000);
+    client.propose_policy(&1000, &0);
     // Cannot execute yet — timelock has not expired.
     assert_eq!(
         client.try_execute_policy(),
@@ -298,7 +298,7 @@ fn test_uninitialized_calls_fail() {
         Err(Ok(Error::NotInitialized))
     );
     assert_eq!(
-        client.try_propose_policy(&10),
+        client.try_propose_policy(&10, &0),
         Err(Ok(Error::NotInitialized))
     );
     assert_eq!(client.try_execute_policy(), Err(Ok(Error::NotInitialized)));
@@ -529,12 +529,18 @@ fn test_paused_state_blocks_and_preserves_every_operation() {
     // core operations use fresh calls because replaying the same refund after
     // a successful call would correctly exceed its payment ceiling.
     client.unpause();
-    assert_eq!(contract_outcome(client.try_deposit(&merchant, &100_000)), Ok(()));
+    assert_eq!(
+        contract_outcome(client.try_deposit(&merchant, &100_000)),
+        Ok(())
+    );
     assert_eq!(
         contract_outcome(client.try_refund(&payment_ref, &buyer, &100_000, &0, &100_000)),
         Ok(())
     );
-    assert_eq!(contract_outcome(client.try_withdraw(&100_000, &merchant)), Ok(()));
+    assert_eq!(
+        contract_outcome(client.try_withdraw(&100_000, &merchant)),
+        Ok(())
+    );
     assert_eq!(
         contract_outcome(client.try_deploy_to_yield(&100_000)),
         Err(Error::StrategyNotSet)
@@ -695,7 +701,24 @@ fn test_pause_unpause_refund_window_events_emitted() {
     );
 
     env.ledger().with_mut(|li| li.sequence_number = 700);
-    client.propose_policy(&300);
+    client.propose_policy(&300, &0);
+
+    // The data map differs across fields by native type (u64 deadline, u32
+    // ledger fields), so build it with per-entry `into_val` rather than the
+    // `map!` macro, which requires one homogeneous value type.
+    let mut policy_data = Map::<Val, Val>::new(&env);
+    policy_data.set(
+        Symbol::new(&env, "deadline").into_val(&env),
+        0u64.into_val(&env),
+    );
+    policy_data.set(
+        Symbol::new(&env, "proposed_at_ledger").into_val(&env),
+        700u32.into_val(&env),
+    );
+    policy_data.set(
+        Symbol::new(&env, "execute_after_ledger").into_val(&env),
+        (700u32 + 17_280u32).into_val(&env),
+    );
 
     assert_eq!(
         env.events().all().filter_by_contract(&client.address),
@@ -704,15 +727,7 @@ fn test_pause_unpause_refund_window_events_emitted() {
             (
                 client.address.clone(),
                 (Symbol::new(&env, "policy_proposed_event"), 300u32).into_val(&env),
-                soroban_sdk::map![
-                    &env,
-                    (Symbol::new(&env, "proposed_at_ledger"), 700u32),
-                    (
-                        Symbol::new(&env, "execute_after_ledger"),
-                        700u32 + 17_280u32
-                    ),
-                ]
-                .into_val(&env)
+                policy_data.into_val(&env)
             )
         ]
     );
@@ -776,7 +791,7 @@ fn test_accept_admin_transfers_role() {
     client.accept_admin();
 
     // New admin can call admin-only functions (propose_policy needs no token balance).
-    client.propose_policy(&200);
+    client.propose_policy(&200, &0);
 }
 
 #[test]
@@ -822,7 +837,7 @@ fn test_cancel_then_reinitiate_works() {
     client.accept_admin();
 
     // B is now admin — propose_policy should work.
-    client.propose_policy(&200);
+    client.propose_policy(&200, &0);
 }
 
 #[test]
@@ -837,7 +852,7 @@ fn test_overwrite_pending_admin() {
 
     // Accept — B should become admin.
     client.accept_admin();
-    client.propose_policy(&200);
+    client.propose_policy(&200, &0);
 }
 
 #[test]
@@ -849,7 +864,7 @@ fn test_old_admin_cannot_act_after_transfer() {
     client.accept_admin();
 
     // New admin can call admin-only functions.
-    client.propose_policy(&200);
+    client.propose_policy(&200, &0);
 }
 
 #[test]
@@ -971,7 +986,7 @@ fn test_propose_and_execute_policy_happy_path() {
     let (env, client, merchant, _token) = setup(100);
     client.deposit(&merchant, &500_000);
 
-    client.propose_policy(&200);
+    client.propose_policy(&200, &0);
 
     let proposal = client.get_pending_policy().unwrap();
     assert_eq!(proposal.window, 200);
@@ -988,7 +1003,7 @@ fn test_propose_and_execute_policy_happy_path() {
 fn test_execute_policy_before_timelock_fails() {
     let (env, client, _merchant, _token) = setup(100);
 
-    client.propose_policy(&200);
+    client.propose_policy(&200, &0);
 
     // Advance only partway through the timelock.
     env.ledger().with_mut(|li| li.sequence_number = 10_000);
@@ -1003,7 +1018,7 @@ fn test_execute_policy_before_timelock_fails() {
 fn test_execute_policy_at_exact_boundary_succeeds() {
     let (env, client, _merchant, _token) = setup(100);
 
-    client.propose_policy(&200);
+    client.propose_policy(&200, &0);
 
     // proposed_at_ledger = 1, timelock = 17_280, so execute at 1 + 17_280 = 17_281.
     env.ledger().with_mut(|li| li.sequence_number = 17_281);
@@ -1023,8 +1038,8 @@ fn test_execute_policy_without_proposal_fails() {
 fn test_propose_policy_overwrites_existing() {
     let (_env, client, _merchant, _token) = setup(100);
 
-    client.propose_policy(&200);
-    client.propose_policy(&500);
+    client.propose_policy(&200, &0);
+    client.propose_policy(&500, &0);
 
     let proposal = client.get_pending_policy().unwrap();
     assert_eq!(proposal.window, 500);
@@ -1046,7 +1061,7 @@ fn test_execute_policy_applies_new_window() {
     );
 
     // Propose and execute a wider window.
-    client.propose_policy(&20_000);
+    client.propose_policy(&20_000, &0);
     env.ledger().with_mut(|li| li.sequence_number += 17_280);
     client.execute_policy();
 
@@ -1063,7 +1078,7 @@ fn test_propose_policy_uninitialized_fails() {
     let client = RefundVaultClient::new(&env, &contract_id);
 
     assert_eq!(
-        client.try_propose_policy(&100),
+        client.try_propose_policy(&100, &0),
         Err(Ok(Error::NotInitialized))
     );
 }
@@ -1083,14 +1098,14 @@ fn test_execute_policy_uninitialized_fails() {
 fn test_propose_policy_requires_auth() {
     let (env, client, _merchant, _token) = setup(100);
     env.set_auths(&[]);
-    client.propose_policy(&200);
+    client.propose_policy(&200, &0);
 }
 
 #[test]
 #[should_panic]
 fn test_execute_policy_requires_auth() {
     let (env, client, _merchant, _token) = setup(100);
-    client.propose_policy(&200);
+    client.propose_policy(&200, &0);
     env.set_auths(&[]);
     client.execute_policy();
 }
@@ -1100,17 +1115,160 @@ fn test_get_policy_timelock() {
     assert_eq!(RefundVault::get_policy_timelock(), 17_280);
 }
 
+// ── Refund policy deadline tests ───────────────────────────────────────────
+//
+// The policy deadline is a wall-clock timestamp (configured via
+// propose_policy / execute_policy) that `refund` checks against the current
+// ledger timestamp. It is orthogonal to the ledger-based refund window, and
+// `0` (the default) means "no deadline".
+
+/// Fund the vault and apply a policy carrying the given window and deadline,
+/// fast-forwarding past the timelock so the proposal is live.
+fn apply_policy(window: u32, deadline: u64) -> (Env, RefundVaultClient<'static>, Address, Address) {
+    let (env, client, merchant, token) = setup(window);
+    client.deposit(&merchant, &500_000);
+
+    client.propose_policy(&window, &deadline);
+    env.ledger().with_mut(|li| li.sequence_number += 17_280);
+    client.execute_policy();
+
+    (env, client, merchant, token)
+}
+
+#[test]
+fn test_policy_deadline_is_configured_and_readable() {
+    let (env, client, _merchant, _token) = setup(100);
+
+    // No deadline by default.
+    assert_eq!(client.get_refund_deadline(), 0);
+    assert_eq!(client.get_pending_policy(), None);
+
+    let deadline = env.ledger().timestamp() + 1_000;
+    client.propose_policy(&100, &deadline);
+
+    // The pending proposal carries the deadline before it is executed...
+    let proposal = client.get_pending_policy().unwrap();
+    assert_eq!(proposal.window, 100);
+    assert_eq!(proposal.deadline, deadline);
+    // ...but it is not live until execute_policy runs.
+    assert_eq!(client.get_refund_deadline(), 0);
+
+    env.ledger().with_mut(|li| li.sequence_number += 17_280);
+    client.execute_policy();
+
+    assert_eq!(client.get_refund_deadline(), deadline);
+    assert_eq!(client.get_pending_policy(), None);
+}
+
+#[test]
+fn test_refund_before_deadline_succeeds() {
+    let deadline = 1_700_000_000;
+    let (env, client, _merchant, _token) = apply_policy(100, deadline);
+
+    // A claim strictly before the deadline is accepted.
+    let payment_ref = BytesN::from_array(&env, &[0x20u8; 32]);
+    let buyer = Address::generate(&env);
+    env.ledger().with_mut(|li| li.timestamp = deadline - 1);
+    client.refund(&payment_ref, &buyer, &100, &env.ledger().sequence(), &100);
+    assert!(client.get_refund(&payment_ref).is_some());
+}
+
+#[test]
+fn test_refund_at_deadline_boundary_succeeds() {
+    let deadline = 1_700_000_000;
+    let (env, client, _merchant, _token) = apply_policy(100, deadline);
+
+    // The temporal boundary: a claim landing exactly on the deadline still
+    // succeeds (expiry is strictly past the deadline).
+    let payment_ref = BytesN::from_array(&env, &[0x21u8; 32]);
+    let buyer = Address::generate(&env);
+    env.ledger().with_mut(|li| li.timestamp = deadline);
+    client.refund(&payment_ref, &buyer, &100, &env.ledger().sequence(), &100);
+    assert!(client.get_refund(&payment_ref).is_some());
+}
+
+#[test]
+fn test_refund_after_deadline_fails() {
+    let deadline = 1_700_000_000;
+    let (env, client, _merchant, token) = apply_policy(100, deadline);
+
+    // One second past the deadline the claim is rejected and leaves no trace:
+    // no record written, float untouched.
+    let payment_ref = BytesN::from_array(&env, &[0x22u8; 32]);
+    let buyer = Address::generate(&env);
+    env.ledger().with_mut(|li| li.timestamp = deadline + 1);
+    assert_eq!(
+        client.try_refund(&payment_ref, &buyer, &100, &env.ledger().sequence(), &100),
+        Err(Ok(Error::RefundExpired))
+    );
+    assert!(
+        client.get_refund(&payment_ref).is_none(),
+        "an expired claim must not write a refund record"
+    );
+    assert_eq!(
+        TokenClient::new(&env, &token).balance(&client.address),
+        500_000,
+        "an expired claim must not move float"
+    );
+}
+
+#[test]
+fn test_deadline_and_window_are_independent_bounds() {
+    let deadline = 1_700_000_000;
+    let (env, client, _merchant, _token) = apply_policy(100, deadline);
+
+    let payment_ref = BytesN::from_array(&env, &[0x23u8; 32]);
+    let buyer = Address::generate(&env);
+
+    // Past the deadline but still inside the window: RefundExpired, not
+    // WindowExpired.
+    env.ledger().with_mut(|li| li.timestamp = deadline + 1);
+    assert_eq!(
+        client.try_refund(&payment_ref, &buyer, &100, &env.ledger().sequence(), &100),
+        Err(Ok(Error::RefundExpired))
+    );
+    assert!(client.get_refund(&payment_ref).is_none());
+}
+
+#[test]
+fn test_zero_deadline_disables_expiry() {
+    let (env, client, _merchant, _token) = apply_policy(100, 0);
+
+    // deadline == 0 mirrors window == 0: refunds are never expired by the
+    // deadline, no matter how far the ledger timestamp advances.
+    env.ledger().with_mut(|li| li.timestamp = u64::MAX / 2);
+    let payment_ref = BytesN::from_array(&env, &[0x24u8; 32]);
+    let buyer = Address::generate(&env);
+    client.refund(&payment_ref, &buyer, &100, &env.ledger().sequence(), &100);
+    assert!(client.get_refund(&payment_ref).is_some());
+}
+
 #[test]
 fn test_policy_events_emitted() {
     use soroban_sdk::testutils::Events;
-    use soroban_sdk::{vec, IntoVal, Symbol};
+    use soroban_sdk::{vec, IntoVal, Map, Symbol, Val};
 
     let (env, client, _merchant, _token) = setup(100);
 
-    client.propose_policy(&200);
+    client.propose_policy(&200, &0);
 
     let current = env.ledger().sequence();
     let events = env.events().all().filter_by_contract(&client.address);
+    // deadline is a u64 while the ledger fields are u32, so build the data
+    // map per-entry (the `map!` macro requires one homogeneous value type).
+    let mut proposed_data = Map::<Val, Val>::new(&env);
+    proposed_data.set(
+        Symbol::new(&env, "deadline").into_val(&env),
+        0u64.into_val(&env),
+    );
+    proposed_data.set(
+        Symbol::new(&env, "proposed_at_ledger").into_val(&env),
+        current.into_val(&env),
+    );
+    proposed_data.set(
+        Symbol::new(&env, "execute_after_ledger").into_val(&env),
+        (current + 17_280u32).into_val(&env),
+    );
     assert_eq!(
         events,
         vec![
@@ -1118,15 +1276,7 @@ fn test_policy_events_emitted() {
             (
                 client.address.clone(),
                 (Symbol::new(&env, "policy_proposed_event"), 200u32).into_val(&env),
-                soroban_sdk::map![
-                    &env,
-                    (Symbol::new(&env, "proposed_at_ledger"), current),
-                    (
-                        Symbol::new(&env, "execute_after_ledger"),
-                        current + 17_280u32
-                    ),
-                ]
-                .into_val(&env)
+                proposed_data.into_val(&env)
             )
         ]
     );
@@ -1134,6 +1284,11 @@ fn test_policy_events_emitted() {
     env.ledger().with_mut(|li| li.sequence_number += 17_280);
     client.execute_policy();
 
+    let mut executed_data = Map::<Val, Val>::new(&env);
+    executed_data.set(
+        Symbol::new(&env, "deadline").into_val(&env),
+        0u64.into_val(&env),
+    );
     let events = env.events().all().filter_by_contract(&client.address);
     assert_eq!(
         events,
@@ -1142,7 +1297,7 @@ fn test_policy_events_emitted() {
             (
                 client.address.clone(),
                 (Symbol::new(&env, "policy_executed_event"), 200u32).into_val(&env),
-                soroban_sdk::Map::<Symbol, soroban_sdk::Val>::new(&env).into_val(&env)
+                executed_data.into_val(&env)
             )
         ]
     );
@@ -1205,6 +1360,8 @@ fn test_shared_refund_vectors_include_live_testnet_refund() {
 
 #[test]
 fn test_refund_to_contract_address_fails_self_transfer() {
+    use soroban_sdk::testutils::Events;
+
     let (env, client, merchant, _token) = setup(100);
     client.deposit(&merchant, &500_000);
 
@@ -1212,26 +1369,22 @@ fn test_refund_to_contract_address_fails_self_transfer() {
     let contract_addr = client.address.clone();
 
     // Refunding to vault address must return SelfTransfer error
-    let res = client.try_refund(
-        &payment_ref,
-        &contract_addr,
-        &50_000,
-        &0,
-        &50_000,
-    );
+    let res = client.try_refund(&payment_ref, &contract_addr, &50_000, &0, &50_000);
     assert_eq!(res, Err(Ok(Error::SelfTransfer)));
 
     // Payment ref must remain unconsumed / not recorded
     assert!(client.get_refund(&payment_ref).is_none());
 
-    // No refund event emitted for the contract
+    // The reverted call emitted no events (all() only reports the last,
+    // successful invocation), so the deposit is not even visible here.
     let events = env.events().all().filter_by_contract(&client.address);
-    // Only the deposit event should exist
-    assert_eq!(events.len(), 1);
+    assert_eq!(events.events().len(), 0);
 }
 
 #[test]
 fn test_withdraw_to_contract_address_fails_self_transfer() {
+    use soroban_sdk::testutils::Events;
+
     let (env, client, merchant, _token) = setup(100);
     client.deposit(&merchant, &500_000);
 
@@ -1239,9 +1392,9 @@ fn test_withdraw_to_contract_address_fails_self_transfer() {
     let res = client.try_withdraw(&50_000, &contract_addr);
     assert_eq!(res, Err(Ok(Error::SelfTransfer)));
 
-    // Only the deposit event should exist
+    // The reverted call emitted no events at all.
     let events = env.events().all().filter_by_contract(&client.address);
-    assert_eq!(events.len(), 1);
+    assert_eq!(events.events().len(), 0);
 }
 
 #[test]
@@ -1278,7 +1431,10 @@ fn test_set_token_succeeds_when_vault_is_empty() {
 
     // Now deposit using the new token
     client.deposit(&merchant, &200_000);
-    assert_eq!(TokenClient::new(&env, &new_token).balance(&client.address), 200_000);
+    assert_eq!(
+        TokenClient::new(&env, &new_token).balance(&client.address),
+        200_000
+    );
 }
 
 #[test]
@@ -1298,7 +1454,7 @@ fn test_set_token_fails_when_vault_is_funded() {
 #[test]
 fn test_set_token_requires_admin_auth() {
     let (env, client, _merchant, _token) = setup(100);
-    let stranger = Address::generate(&env);
+    let _stranger = Address::generate(&env);
 
     let new_token_admin = Address::generate(&env);
     let new_sac = env.register_stellar_asset_contract_v2(new_token_admin);
