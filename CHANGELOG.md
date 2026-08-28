@@ -82,6 +82,12 @@ breaking changes bump the **minor** version, and they are called out as such.
 
 ### Changed
 
+- **Lower-cost Merkle proof verification** (issue #125): `ReceiptShard` and
+  `ReceiptAnchor` now fold sorted-pair proofs in a single iterative pure-WASM
+  SHA-256 loop, avoiding redundant proof buffering and host crypto roundtrips.
+  Batch-size instruction measurements were added to the ReceiptAnchor test suite
+  and documented in `docs/BENCHMARKS.md`.
+
 - **Advanced WASM Memory Management for Merkle Proofs** (issue #139):
   Refactored `ReceiptShard::verify_receipt` to copy host vector inputs into a stack-allocated
   static buffer (`proof_buffer: [[u8; 32]; 128]`) and perform intermediate hashing using the pure Wasm
