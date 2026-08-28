@@ -72,6 +72,8 @@ they were charged correctly, with no trusted API in the path.
 | `anchor_batch(root, count, period_start, period_end) -> u64` | Anchors a batch root, returns its `batch_id`. Merchant auth required. `count` must be $\le$ 1000 (`MAX_BATCH_SIZE`). Rate-limited if `min_anchor_interval > 0`. |
 | `get_batch(batch_id) -> BatchRecord` | Reads an anchored batch. |
 | `get_batch_count() -> u64` | Returns the total number of anchored batches. Read-only. |
+| `get_admin() -> Address` | Returns the configured merchant admin address. Read-only; fails with `NotInitialized` before `initialize`. |
+| `get_pruned_up_to() -> u64` | Returns the internal `PrunedUpTo` cursor: the lower bound of the pruned prefix. Read-only; fails with `NotInitialized` before `initialize`. |
 | `get_max_batch_size() -> u32` | Returns `MAX_BATCH_SIZE` (currently 1000). Read-only; clients should discover the limit via this getter rather than hard-coding it. |
 | `set_min_anchor_interval(interval)` | Sets the minimum seconds between anchors (0 = disabled, max 86,400). Merchant auth required. |
 | `get_min_anchor_interval() -> u32` | Returns the current minimum anchor interval in seconds. Read-only. |
@@ -113,16 +115,31 @@ Holds merchant float and executes refunds bounded by an on-chain policy.
 |---|---|
 | `initialize(merchant, token, refund_window_ledgers)` | Sets admin, settlement token, and refund window. |
 | `deposit(from, amount)` | Merchant tops up float. |
-| `refund(payment_ref, recipient, amount, paid_at_ledger, payment_amount)` | Refunds part or all of a payment, subject to policy. `amount` is added to the cumulative total for `payment_ref`; `payment_amount` is the original payment amount and the hard ceiling on cumulative refunds. |
+| `refund(payment_ref, recipient, amount, paid_at_ledger, payment_amount)` | Refunds part or all of a payment, subject to policy. `amount` is added to the cumulative total for `payment_ref`; `payment_amount` is the original payment amount and the hard ceiling on cumulative refunds. A `paid_at_ledger` in the future (greater than the current ledger) is rejected with `FuturePaidAtLedger` — it would otherwise let the merchant keep the window open indefinitely. |
 | `withdraw(amount, to)` | Merchant withdraws float. |
 | `propose_policy(ledgers)` | Proposes a new refund window; subject to timelock. |
 | `execute_policy()` | Executes a pending policy change after the timelock. |
 | `get_pending_policy()` | Returns the current pending policy proposal, if any. |
 | `get_policy_timelock()` | Returns the policy timelock delay in ledgers (read-only). |
 | `get_refund(payment_ref) -> Option<RefundRecord>` | Looks up a refund. |
+| `get_admin() -> Address` | Returns the admin (merchant) address. Read-only; fails with `NotInitialized` before `initialize`. |
+| `get_token() -> Address` | Returns the settlement token address. Read-only; fails with `NotInitialized` before `initialize`. |
+| `get_refund_window() -> u32` | Returns the refund window in ledgers (`0` = no time bound). Read-only; fails with `NotInitialized` before `initialize`. |
+| `is_paused() -> bool` | Returns whether the vault is paused. Read-only; fails with `NotInitialized` before `initialize`, `false` otherwise. |
 | `pause()` | Pauses operations for emergency stops. Merchant auth required. |
 | `unpause()` | Resumes paused operations. Merchant auth required. |
 | `extend_refund_ttl(payment_ref)` | Extends the TTL of a refund record to prevent archival. Publicly callable. |
+
+**Config getters are individual, not a batch `get_config`.** Exposing the four
+stored values as separate read-only calls (`get_admin`, `get_token`,
+`get_refund_window`, `is_paused`) — rather than a single struct-returning
+`get_config` — keeps the publish ABI compositional and stable as new
+configuration is added: a client that only needs one value reads exactly one
+storage key, the `#[contracttype]` payload does not change shape when config
+grows, and the `is_paused` distinction (missing admin ⇒ `NotInitialized`,
+initialized ⇒ `false`) could not be expressed faithfully in one struct anyway.
+The status quo is the supported way to read config; do not decode raw ledger
+entries by storage key (see issue #195).
 
 Emits:
 
@@ -153,7 +170,9 @@ Enforced invariants, each covered by a test:
   `payment_amount`; an over-ceiling call is rejected (`ExceedsPayment`).
 - **Window from the original payment** — the refund window is measured from
   `paid_at_ledger` (the original payment), never extended by a partial
-  (`WindowExpired`).
+  (`WindowExpired`). A `paid_at_ledger` in the future is rejected outright
+  (`FuturePaidAtLedger`) so a merchant cannot back-date a payment to keep the
+  window open.
 - **Float-bounded** — a refund can never exceed vault balance (`InsufficientFloat`).
 - **Merchant-only** — every state-changing call requires merchant auth
   (`Unauthorized`); the admin may be a contract account (see
@@ -178,8 +197,6 @@ contracts instead of per-contract tables.
 | 7 | `InvalidAmount` | Amount was not strictly positive. |
 | 8 | `Paused` | Vault is paused. |
 | 9 | `RefundNotFound` | No refund record for the payment ref. |
-| 10 | `MetadataTooLong` | Metadata payload exceeded the allowed length. |
-| 11 | `AmountExceedsMax` | Amount exceeded the configured maximum. |
 | 12 | `NoPendingTransfer` | No admin transfer pending. |
 | 13 | `StrategyNotSet` | No yield strategy configured. |
 | 14 | `InsufficientReserve` | Yield deployment would breach the minimum reserve. |
@@ -190,8 +207,20 @@ contracts instead of per-contract tables.
 | 19 | `ExceedsPayment` | Cumulative refunds would exceed the payment ceiling. |
 | 100 | `BatchNotFound` | The requested batch does not exist (or was pruned). |
 | 101 | `BatchTooLarge` | A batch larger than `MAX_BATCH_SIZE` was submitted. |
+| 102 | `ShardCallFailed` | A shard call returned an unexpected shape. |
+| 103 | `DuplicateRoot` | The anchored Merkle root equals the currently active root. |
+| 200 | `RootNotFound` | The Merkle root is not in the historical ring buffer. |
+| 201 | `ProofTooLong` | The Merkle proof exceeds `MAX_PROOF_LEN`. |
+| 202 | `AnchorRateLimited` | An anchor was submitted before the minimum interval elapsed. |
+| 300 | `NoPendingPolicy` | No pending policy change exists to execute. |
+| 301 | `TimelockNotExpired` | The policy timelock period has not yet elapsed. |
+| 302 | `FuturePaidAtLedger` | A refund reported `paid_at_ledger` in the future (greater than the current ledger sequence). |
 
 Codes are stable: new variants are appended with fresh values, never renumbered.
+Note that `10`/`11` are deliberately unassigned (`MetadataTooLong` and
+`AmountExceedsMax` were dead variants removed in #170), and `4`
+(`AlreadyRefunded`) is reserved after the `RefundV2` migration — surviving codes
+keep their published values.
 
 ## Storage Archival
 
