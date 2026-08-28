@@ -41,10 +41,6 @@ pub enum Error {
     Paused = 8,
     /// No refund record exists for the given payment ref.
     RefundNotFound = 9,
-    /// A metadata payload exceeded the allowed length.
-    MetadataTooLong = 10,
-    /// A requested amount exceeded the configured maximum.
-    AmountExceedsMax = 11,
     /// No admin transfer is pending.
     NoPendingTransfer = 12,
     /// No yield strategy has been configured.
