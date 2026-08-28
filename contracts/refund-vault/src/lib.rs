@@ -760,6 +760,42 @@ impl RefundVault {
         POLICY_TIMELOCK
     }
 
+    // ── Configuration getters ────────────────────────────────────────────
+
+    /// Returns the admin (merchant) address, or `NotInitialized` if the vault
+    /// has not been initialized.
+    pub fn get_admin(env: Env) -> Result<Address, Error> {
+        env.storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .ok_or(Error::NotInitialized)
+    }
+
+    /// Returns the payment token address, or `NotInitialized` if the vault
+    /// has not been initialized.
+    pub fn get_token(env: Env) -> Result<Address, Error> {
+        env.storage()
+            .instance()
+            .get(&DataKey::Token)
+            .ok_or(Error::NotInitialized)
+    }
+
+    /// Returns the refund window in ledgers, or `NotInitialized` if the vault
+    /// has not been initialized. A value of 0 means no time-based restriction.
+    pub fn get_refund_window(env: Env) -> Result<u32, Error> {
+        env.storage()
+            .instance()
+            .get(&DataKey::RefundWindow)
+            .ok_or(Error::NotInitialized)
+    }
+
+    /// Returns whether the vault is currently paused.
+    pub fn is_paused(env: Env) -> bool {
+        env.storage()
+            .instance()
+            .get(&DataKey::IsPaused)
+            .unwrap_or(false)
+    }
     // ── Yield strategy management ──────────────────────────────────────────
 
     /// Register an external yield strategy contract. Only callable by admin.
