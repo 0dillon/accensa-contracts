@@ -198,7 +198,7 @@ contracts instead of per-contract tables.
 | 1 | `AlreadyInitialized` | `initialize` called twice. |
 | 2 | `NotInitialized` | State-changing call before `initialize`. |
 | 3 | `Unauthorized` | Caller is not the authorized merchant/admin. |
-| 4 | `AlreadyRefunded` | Payment already fully refunded under the legacy rule. |
+| 4 | `AlreadyRefunded` | Legacy single-refund marker (pre-#99). Retained for interface stability; the vault reports `ExceedsPayment` (19) for over-ceiling and legacy records since cumulative partial refunds. |
 | 5 | `WindowExpired` | Refund window (from the original payment) has expired. |
 | 6 | `InsufficientFloat` | Vault float is insufficient. |
 | 7 | `InvalidAmount` | Amount was not strictly positive. |

@@ -29,7 +29,9 @@ pub enum Error {
     NotInitialized = 2,
     /// The caller is not the authorized merchant/admin.
     Unauthorized = 3,
-    /// The full refund ceiling for a payment has already been reached.
+    /// Legacy single-refund marker (pre-#99). Retained for interface
+    /// stability; the vault reports `ExceedsPayment` for over-ceiling and
+    /// legacy records since cumulative partial refunds.
     AlreadyRefunded = 4,
     /// The refund window (measured from the original payment) has expired.
     WindowExpired = 5,
