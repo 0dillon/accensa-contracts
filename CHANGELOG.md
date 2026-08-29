@@ -10,6 +10,33 @@ breaking changes bump the **minor** version, and they are called out as such.
 
 ### Added
 
+- **VDF-gated refunds for `RefundVault`** (issue #138): the refund policy now
+  carries a Verifiable Delay Function requirement — `propose_policy(ledgers,
+  deadline, vdf_delay)` configures a delay in squarings (subject to the same
+  timelock) and `execute_policy` applies it. When the policy has a delay
+  configured, `refund`, every claim in `claim_batch`, and every item in
+  `process_batch` must supply a valid **Wesolowski VDF proof** that the delay
+  has genuinely elapsed; claims without one fail with `VdfProofRequired`
+  (302), with an invalid or premature one with `InvalidVdfProof` (303), and a
+  proof supplied against a policy with no delay with `VdfNotConfigured` (304).
+  The proof is bound to the payment (challenge = `sha256(payment_ref)`), so it
+  cannot be replayed across payments, and the delay is *computational* — a
+  validator that controls block timestamps or transaction ordering cannot
+  shorten it without factoring the contract's fixed 1024-bit modulus. The
+  verifier (`contracts/refund-vault/src/vdf.rs`) runs in pure WASM via
+  `crypto-bigint` (already in the dependency tree, so no new transitive
+  crates), is exposed publicly as read-only `verify_vdf(challenge, delay,
+  proof)` for randomness-verification flows, and its cost is pinned by a
+  budget test (a verification measures ≈51k CPU units — about a tenth of a
+  refund call). The new `get_vdf_delay()` getter exposes the configured delay.
+  This is a **breaking change** for clients: the `propose_policy` signature is
+  extended and `refund`/`RefundClaim`/`RefundParam` gain a `vdf_proof`
+  argument/field. `initialize` is unchanged and existing deployments default
+  to no delay (`0`), keeping them behaviour- and storage-compatible. The
+  contract's modulus is a fixed constant with its factors discarded after
+  generation; a production deployment should replace it with a
+  ceremony-chosen modulus (see `docs/SECURITY_MODEL.md` § "VDF Fairness").
+
 - **Best-effort batch refunds for `RefundVault`**: `process_batch(refunds)`
   processes up to 100 claims in one transaction (`Vec<RefundParam>`, same shape
   as `RefundClaim`) under a single merchant authorization, returning

@@ -92,4 +92,14 @@ pub enum Error {
     NoPendingPolicy = 300,
     /// The timelock period has not yet elapsed.
     TimelockNotExpired = 301,
+    /// A refund was claimed against a policy with a VDF delay configured but
+    /// no VDF proof was supplied.
+    VdfProofRequired = 302,
+    /// A supplied VDF proof failed verification (tampered output or witness,
+    /// a premature proof computed for a smaller delay, or a degenerate
+    /// challenge).
+    InvalidVdfProof = 303,
+    /// A VDF proof was supplied for a claim against a policy that has no VDF
+    /// delay configured.
+    VdfNotConfigured = 304,
 }

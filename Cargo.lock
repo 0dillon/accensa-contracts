@@ -1314,6 +1314,7 @@ name = "refund-vault"
 version = "0.3.0"
 dependencies = [
  "accensa-common",
+ "crypto-bigint",
  "multisig-account",
  "proptest",
  "receipt-anchor",
