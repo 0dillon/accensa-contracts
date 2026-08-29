@@ -45,7 +45,8 @@ Emitted when the merchant tops up the vault's float.
   - `amount` (`i128`): The amount deposited (in the token's smallest unit).
 
 ### 4. `RefundEvent`
-Emitted when a payment is refunded to an agent.
+Emitted when a payment is refunded to an agent. A `claim_batch` call emits one
+`RefundEvent` per claim, in claim order (the same event as a single `refund`).
 
 - **Topics**: `("refund_event", payment_ref: BytesN<32>)`
 - **Data Map**:

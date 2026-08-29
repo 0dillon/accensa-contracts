@@ -4,7 +4,7 @@ use super::*;
 use soroban_sdk::{
     testutils::{storage::Persistent as _, Address as _, Ledger},
     token::{StellarAssetClient, TokenClient},
-    Address, Env,
+    vec, Address, Env, Val,
 };
 
 const FLOAT: i128 = 1_000_000;
@@ -1872,4 +1872,400 @@ fn test_set_token_requires_admin_auth() {
     // Let's verify with mock_all_auths reset
     env.mock_all_auths();
     assert!(client.try_set_token(&new_token).is_ok());
+}
+
+// ── Batch refund tests ─────────────────────────────────────────────────────
+
+/// Build a [`RefundClaim`] with the standard defaults used by the batch tests.
+fn make_claim(
+    payment_ref: BytesN<32>,
+    recipient: &Address,
+    amount: i128,
+    paid_at_ledger: u32,
+    payment_amount: i128,
+) -> RefundClaim {
+    RefundClaim {
+        payment_ref,
+        recipient: recipient.clone(),
+        amount,
+        paid_at_ledger,
+        payment_amount,
+    }
+}
+
+/// Construct the expected `(contract, topics, data)` triple for a
+/// `refund_event` published by the refund vault.
+fn expect_refund_event(
+    env: &Env,
+    client: &RefundVaultClient<'static>,
+    payment_ref: &BytesN<32>,
+    amount: i128,
+    fee: i128,
+    cumulative_refunded: i128,
+    recipient: &Address,
+) -> (soroban_sdk::Address, Vec<Val>, Val) {
+    use soroban_sdk::{IntoVal, Map, Symbol};
+
+    let mut data: Map<Val, Val> = Map::new(env);
+    data.set(
+        Symbol::new(env, "amount").into_val(env),
+        amount.into_val(env),
+    );
+    data.set(Symbol::new(env, "fee").into_val(env), fee.into_val(env));
+    data.set(
+        Symbol::new(env, "cumulative_refunded").into_val(env),
+        cumulative_refunded.into_val(env),
+    );
+    data.set(
+        Symbol::new(env, "recipient").into_val(env),
+        recipient.clone().into_val(env),
+    );
+    data.set(
+        Symbol::new(env, "ledger").into_val(env),
+        env.ledger().sequence().into_val(env),
+    );
+
+    (
+        client.address.clone(),
+        vec![
+            env,
+            Symbol::new(env, "refund_event").into_val(env),
+            payment_ref.clone().into_val(env),
+        ],
+        data.into_val(env),
+    )
+}
+
+#[test]
+fn test_claim_batch_successful_multiple_claims() {
+    let (env, client, merchant, token) = setup(100);
+    client.deposit(&merchant, &500_000);
+    let token_client = TokenClient::new(&env, &token);
+
+    let b1 = Address::generate(&env);
+    let b2 = Address::generate(&env);
+    let b3 = Address::generate(&env);
+    let ref1 = BytesN::from_array(&env, &[21u8; 32]);
+    let ref2 = BytesN::from_array(&env, &[22u8; 32]);
+    let ref3 = BytesN::from_array(&env, &[23u8; 32]);
+
+    let claims = vec![
+        &env,
+        make_claim(ref1.clone(), &b1, 100_000, 0, 100_000),
+        make_claim(ref2.clone(), &b2, 50_000, 0, 50_000),
+        make_claim(ref3.clone(), &b3, 250_000, 0, 250_000),
+    ];
+    client.claim_batch(&claims);
+
+    assert_eq!(token_client.balance(&b1), 100_000);
+    assert_eq!(token_client.balance(&b2), 50_000);
+    assert_eq!(token_client.balance(&b3), 250_000);
+    // 400_000 of the 500_000 float left for the merchant-funded vault.
+    assert_eq!(token_client.balance(&client.address), 100_000);
+
+    let rec1 = client.get_refund(&ref1).unwrap();
+    let rec2 = client.get_refund(&ref2).unwrap();
+    let rec3 = client.get_refund(&ref3).unwrap();
+    assert_eq!(rec1.amount_refunded, 100_000);
+    assert_eq!(rec2.amount_refunded, 50_000);
+    assert_eq!(rec3.amount_refunded, 250_000);
+}
+
+#[test]
+fn test_claim_batch_emits_one_event_per_item() {
+    use soroban_sdk::testutils::Events;
+
+    let (env, client, merchant, _token) = setup(100);
+    client.deposit(&merchant, &500_000);
+
+    let b1 = Address::generate(&env);
+    let b2 = Address::generate(&env);
+    let b3 = Address::generate(&env);
+    let ref1 = BytesN::from_array(&env, &[31u8; 32]);
+    let ref2 = BytesN::from_array(&env, &[32u8; 32]);
+    let ref3 = BytesN::from_array(&env, &[33u8; 32]);
+
+    let claims = vec![
+        &env,
+        make_claim(ref1.clone(), &b1, 100_000, 0, 100_000),
+        make_claim(ref2.clone(), &b2, 50_000, 0, 50_000),
+        make_claim(ref3.clone(), &b3, 250_000, 0, 250_000),
+    ];
+    client.claim_batch(&claims);
+
+    // Exactly three refund_events, one per claim, in claim order.
+    assert_eq!(
+        env.events().all().filter_by_contract(&client.address),
+        vec![
+            &env,
+            expect_refund_event(&env, &client, &ref1, 100_000, 0, 100_000, &b1),
+            expect_refund_event(&env, &client, &ref2, 50_000, 0, 50_000, &b2),
+            expect_refund_event(&env, &client, &ref3, 250_000, 0, 250_000, &b3),
+        ]
+    );
+}
+
+#[test]
+fn test_claim_batch_partial_failure_reverts_everything() {
+    use soroban_sdk::testutils::Events;
+
+    let (env, client, merchant, token) = setup(100);
+    client.deposit(&merchant, &500_000);
+    let token_client = TokenClient::new(&env, &token);
+
+    let b1 = Address::generate(&env);
+    let b2 = Address::generate(&env);
+    let b3 = Address::generate(&env);
+    let ref1 = BytesN::from_array(&env, &[41u8; 32]);
+    let ref2 = BytesN::from_array(&env, &[42u8; 32]);
+    let ref3 = BytesN::from_array(&env, &[43u8; 32]);
+
+    // The middle claim has a zero ceiling (payment_amount = 0) and must fail
+    // with ExceedsPayment; the batch must revert the earlier successful claim.
+    let claims = vec![
+        &env,
+        make_claim(ref1.clone(), &b1, 100_000, 0, 100_000),
+        make_claim(ref2.clone(), &b2, 50_000, 0, 0),
+        make_claim(ref3.clone(), &b3, 250_000, 0, 250_000),
+    ];
+    assert_eq!(
+        client.try_claim_batch(&claims),
+        Err(Ok(Error::ExceedsPayment))
+    );
+
+    // All-or-nothing: the first claim's transfer, record write and event were
+    // rolled back along with the whole invocation.
+    assert_eq!(token_client.balance(&client.address), 500_000);
+    assert_eq!(token_client.balance(&b1), 0);
+    assert_eq!(token_client.balance(&b2), 0);
+    assert_eq!(token_client.balance(&b3), 0);
+    assert!(client.get_refund(&ref1).is_none());
+    assert_eq!(
+        env.events().all().filter_by_contract(&client.address),
+        vec![&env]
+    );
+}
+
+#[test]
+fn test_claim_batch_same_ref_accumulates_and_excess_reverts() {
+    let (env, client, merchant, token) = setup(100);
+    StellarAssetClient::new(&env, &token).mint(&merchant, &1_000_000);
+    client.deposit(&merchant, &2_000_000);
+    let token_client = TokenClient::new(&env, &token);
+
+    let buyer = Address::generate(&env);
+    let ref1 = BytesN::from_array(&env, &[51u8; 32]);
+
+    // Two partials against the same 1M ceiling within one batch.
+    let claims = vec![
+        &env,
+        make_claim(ref1.clone(), &buyer, 400_000, 0, 1_000_000),
+        make_claim(ref1.clone(), &buyer, 400_000, 0, 1_000_000),
+    ];
+    client.claim_batch(&claims);
+    assert_eq!(client.get_refund(&ref1).unwrap().amount_refunded, 800_000);
+    assert_eq!(token_client.balance(&buyer), 800_000);
+
+    // A later batch whose second element would push the cumulative over the
+    // ceiling must fail and roll back the first element too.
+    let excess = vec![
+        &env,
+        make_claim(ref1.clone(), &buyer, 400_000, 0, 1_000_000),
+        make_claim(ref1.clone(), &buyer, 700_000, 0, 1_000_000),
+    ];
+    assert_eq!(
+        client.try_claim_batch(&excess),
+        Err(Ok(Error::ExceedsPayment))
+    );
+
+    assert_eq!(client.get_refund(&ref1).unwrap().amount_refunded, 800_000);
+    assert_eq!(token_client.balance(&buyer), 800_000);
+    assert_eq!(token_client.balance(&client.address), 2_000_000 - 800_000);
+}
+
+#[test]
+fn test_claim_batch_float_checked_per_item() {
+    let (env, client, merchant, token) = setup(100);
+    client.deposit(&merchant, &500_000);
+    let token_client = TokenClient::new(&env, &token);
+
+    let b1 = Address::generate(&env);
+    let b2 = Address::generate(&env);
+    let ref1 = BytesN::from_array(&env, &[61u8; 32]);
+    let ref2 = BytesN::from_array(&env, &[62u8; 32]);
+
+    // Each element of a valid first claim leaves 200k; the second claim needs
+    // 300k and must observe the reduced float and fail, reverting the batch.
+    let claims = vec![
+        &env,
+        make_claim(ref1.clone(), &b1, 300_000, 0, 300_000),
+        make_claim(ref2.clone(), &b2, 300_000, 0, 300_000),
+    ];
+    assert_eq!(
+        client.try_claim_batch(&claims),
+        Err(Ok(Error::InsufficientFloat))
+    );
+
+    assert_eq!(token_client.balance(&client.address), 500_000);
+    assert_eq!(token_client.balance(&b1), 0);
+    assert_eq!(token_client.balance(&b2), 0);
+    assert!(client.get_refund(&ref1).is_none());
+    assert!(client.get_refund(&ref2).is_none());
+}
+
+#[test]
+fn test_claim_batch_empty_succeeds() {
+    use soroban_sdk::testutils::Events;
+
+    let (env, client, merchant, token) = setup(100);
+    client.deposit(&merchant, &100_000);
+    let token_client = TokenClient::new(&env, &token);
+
+    let claims: Vec<RefundClaim> = Vec::new(&env);
+    client.claim_batch(&claims);
+
+    // No-op: float untouched, no events.
+    assert_eq!(token_client.balance(&client.address), 100_000);
+    assert_eq!(
+        env.events().all().filter_by_contract(&client.address),
+        vec![&env]
+    );
+}
+
+#[test]
+fn test_claim_batch_fee_applied_per_item() {
+    let (env, client, merchant, token) = setup(100);
+    StellarAssetClient::new(&env, &token).mint(&merchant, &9_000_000);
+    client.deposit(&merchant, &10_000_000);
+    let token_client = TokenClient::new(&env, &token);
+
+    let fee_collector = Address::generate(&env);
+    client.set_fee_recipient(&fee_collector);
+    client.set_fee_bps(&100);
+
+    let b1 = Address::generate(&env);
+    let b2 = Address::generate(&env);
+    let b3 = Address::generate(&env);
+    let ref1 = BytesN::from_array(&env, &[71u8; 32]);
+    let ref2 = BytesN::from_array(&env, &[72u8; 32]);
+    let ref3 = BytesN::from_array(&env, &[73u8; 32]);
+
+    let claims = vec![
+        &env,
+        make_claim(ref1.clone(), &b1, 1_000_000, 0, 1_000_000),
+        make_claim(ref2.clone(), &b2, 1_000_000, 0, 1_000_000),
+        make_claim(ref3.clone(), &b3, 1_000_000, 0, 1_000_000),
+    ];
+    client.claim_batch(&claims);
+
+    // 1% up-rounded fee per claim: buyers net 990k each, protocol nets 30k.
+    assert_eq!(token_client.balance(&b1), 990_000);
+    assert_eq!(token_client.balance(&b2), 990_000);
+    assert_eq!(token_client.balance(&b3), 990_000);
+    assert_eq!(token_client.balance(&fee_collector), 30_000);
+    assert_eq!(token_client.balance(&client.address), 7_000_000);
+}
+
+// A batch without merchant authorization aborts at require_auth.
+#[test]
+#[should_panic]
+fn test_claim_batch_without_auth_panics() {
+    let (env, client, _merchant, _token) = setup(100);
+
+    let buyer = Address::generate(&env);
+    let claims = vec![
+        &env,
+        make_claim(BytesN::from_array(&env, &[80u8; 32]), &buyer, 100, 0, 100),
+    ];
+
+    // Default auth setup authorizes only the contract invoker; the merchant is
+    // never authorized here, so require_auth aborts the invocation.
+    env.mock_auths(&[]);
+    client.claim_batch(&claims);
+}
+
+#[test]
+fn test_claim_batch_when_paused_fails() {
+    let (env, client, merchant, token) = setup(100);
+    client.deposit(&merchant, &100_000);
+    client.pause();
+    let token_client = TokenClient::new(&env, &token);
+
+    let buyer = Address::generate(&env);
+    let claims = vec![
+        &env,
+        make_claim(BytesN::from_array(&env, &[81u8; 32]), &buyer, 100, 0, 100),
+    ];
+    assert_eq!(client.try_claim_batch(&claims), Err(Ok(Error::Paused)));
+
+    // Paused state preserved the float and wrote nothing.
+    assert_eq!(token_client.balance(&client.address), 100_000);
+    assert_eq!(token_client.balance(&buyer), 0);
+}
+
+#[test]
+fn test_claim_batch_cost_stays_within_budget() {
+    let (env, client, merchant, _token) = setup(100);
+    client.deposit(&merchant, &1_000_000);
+
+    // Default test-host budget limits (soroban-env-host src/budget/limits.rs):
+    // 100M CPU instructions and 40 MiB of memory per invocation. The charged
+    // instruction counts here are inflated by the debug test host, so the real
+    // WASM invocation is strictly cheaper than what we measure.
+    const DEFAULT_CPU_LIMIT: u64 = 100_000_000;
+    const DEFAULT_MEM_LIMIT: u64 = 40 * 1024 * 1024;
+
+    let single_ref = BytesN::from_array(&env, &[90u8; 32]);
+    let single_buyer = Address::generate(&env);
+
+    // Measure a single claim in a fresh default budget.
+    env.cost_estimate().budget().reset_default();
+    client.refund(&single_ref, &single_buyer, &10_000, &0, &10_000);
+    let single_cpu = env.cost_estimate().budget().cpu_instruction_cost();
+    let single_mem = env.cost_estimate().budget().memory_bytes_cost();
+    assert!(single_cpu > 0);
+    assert!(single_mem > 0);
+
+    // Ten independent claims in one invocation, also under a fresh default
+    // budget. Ten is behaviorally representative (a real ordering might cover
+    // that many refunds) while keeping the measured result comfortably inside
+    // the invocation limits even with the debug-host overhead.
+    let mut claims = Vec::new(&env);
+    for i in 0..10u8 {
+        let buyer = Address::generate(&env);
+        claims.push_back(make_claim(
+            BytesN::from_array(&env, &[i; 32]),
+            &buyer,
+            10_000,
+            0,
+            10_000,
+        ));
+    }
+
+    env.cost_estimate().budget().reset_default();
+    client.claim_batch(&claims);
+    let batch_cpu = env.cost_estimate().budget().cpu_instruction_cost();
+    let batch_mem = env.cost_estimate().budget().memory_bytes_cost();
+
+    // Headroom: even with debug-host inflation a 10-claim batch stays under a
+    // tenth of the CPU budget and a twentieth of the memory budget, far from
+    // the invocation limits.
+    assert!(
+        batch_cpu < DEFAULT_CPU_LIMIT / 10,
+        "10-claim batch cpu {batch_cpu} exceeds {}/10",
+        DEFAULT_CPU_LIMIT
+    );
+    assert!(
+        batch_mem < DEFAULT_MEM_LIMIT / 20,
+        "10-claim batch memory {batch_mem} exceeds {}/20",
+        DEFAULT_MEM_LIMIT
+    );
+
+    // Near-linear scaling: one invocation handling ten claims costs no more
+    // than twelve single claims — a super-linear loop, storage or auth blow-up
+    // would trip this. (In practice batching is marginally cheaper per claim.)
+    assert!(
+        batch_cpu < single_cpu * 12,
+        "batch cpu {batch_cpu} (single {single_cpu}) exceeds 12x single"
+    );
 }

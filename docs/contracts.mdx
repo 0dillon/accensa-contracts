@@ -123,6 +123,19 @@ fn refund(env: Env, payment_ref: BytesN<32>, recipient: Address, amount: i128, p
 - **Fees:** When a fee is configured (`set_fee_bps`), the claim is split into the recipient's `payout` and a `fee` that rounds up to the fee recipient (`payout + fee == amount`). An unset fee recipient defaults to the merchant; configuring the vault's own address is rejected.
 - **Emits:** `RefundEvent` carrying the payment reference and the stored `RefundRecord` (including the per-call `fee`).
 
+### `claim_batch`
+Refunds multiple claims in one transaction. Each claim is processed with exactly the same logic, checks and fees as a single `refund`, so the batch needs only one merchant signature and one reentrancy-lock acquisition. The batch is **atomic**: if any claim fails, the error is returned and the whole invocation — its transfers, storage writes and events — is reverted, so either every claim persists or none do.
+
+```rust
+fn claim_batch(env: Env, claims: Vec<RefundClaim>) -> Result<(), Error>
+```
+
+- **Authentication:** Requires the merchant's signature (checked once for the whole batch).
+- **Constraints:** Each element is validated independently, exactly as for `refund`: `InvalidAmount` for a non-positive amount, `SelfTransfer` for the vault's own address, `ExceedsPayment` for a legacy record or a cumulative over-ceiling, `WindowExpired` / `RefundExpired` when outside the policy, and `InsufficientFloat` if the vault cannot cover the element at the point it is processed. The float is read afresh before **every** element, so a batch cannot overdraw the float any more than the equivalent sequence of single refunds; repeated `payment_ref`s accumulate against the same ceiling across elements.
+- **`RefundClaim` fields:** `payment_ref: BytesN<32>`, `recipient: Address`, `amount: i128`, `paid_at_ledger: u32`, `payment_amount: i128` — the same arguments a `refund` call takes, as a single struct.
+- **Emits:** one `RefundEvent` per claim, in claim order.
+- **Empty batch:** an empty `claims` vector succeeds as a no-op.
+
 ### `withdraw`
 Returns float from the vault to an address of the merchant's choosing.
 

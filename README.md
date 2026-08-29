@@ -114,6 +114,7 @@ Holds merchant float and executes refunds bounded by an on-chain policy.
 | `initialize(merchant, token, refund_window_ledgers)` | Sets admin, settlement token, and refund window. |
 | `deposit(from, amount)` | Merchant tops up float. |
 | `refund(payment_ref, recipient, amount, paid_at_ledger, payment_amount)` | Refunds part or all of a payment, subject to policy. `amount` is added to the cumulative total for `payment_ref`; `payment_amount` is the original payment amount and the hard ceiling on cumulative refunds. |
+| `claim_batch(claims)` | Refunds multiple claims in one transaction (`Vec<RefundClaim>`, one struct per `refund` call). Atomic: one failing claim reverts the whole batch. One merchant signature, one reentrancy lock, and a `RefundEvent` per claim. Per-element float checks mean it can never overdraw the vault. |
 | `withdraw(amount, to)` | Merchant withdraws float. |
 | `propose_policy(ledgers, deadline)` | Proposes a new refund policy — a window (in ledgers) plus a wall-clock deadline (Unix timestamp; `0` = no deadline); subject to timelock. |
 | `execute_policy()` | Executes a pending policy change after the timelock. Applies both the new window and the new deadline. |
@@ -145,7 +146,8 @@ Emits:
 
 Each partial refund emits its own `RefundEvent` carrying **both** the amount for
 that call (`amount`) and the running total (`cumulative_refunded`), so an indexer
-knows the state of a payment without summing history. `RefundRecord` stores the
+knows the state of a payment without summing history. A batch of claims emits one
+`RefundEvent` per item, in claim order. `RefundRecord` stores the
 cumulative total (`amount_refunded`) plus the `payment_amount` ceiling, the
 `paid_at_ledger` the window is measured from, and the recipient. When a fee is
 configured, each `RefundEvent` also carries the `fee` deducted from the claim,
@@ -160,7 +162,13 @@ Enforced invariants, each covered by a test:
 
 - **Partial refunds within a ceiling** — a `payment_ref` may be refunded across
   multiple calls, but cumulative refunds can never exceed the original
-  `payment_amount`; an over-ceiling call is rejected (`ExceedsPayment`).
+  `payment_amount`; an over-ceiling call is rejected (`ExceedsPayment`). A batch
+  accumulates against the same ceiling across its own elements.
+- **Atomic batches** — `claim_batch` is all-or-nothing: a single failing claim
+  reverts the transfers, records and events of every claim in the call.
+- **Per-item float bound** — the float is read from the token contract before
+  every claim (single or batched), so a batch can never overdraw the vault any
+  more than the equivalent set of single refunds (`InsufficientFloat`).
 - **Window from the original payment** — the refund window is measured from
   `paid_at_ledger` (the original payment), never extended by a partial
   (`WindowExpired`).

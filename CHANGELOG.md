@@ -10,6 +10,23 @@ breaking changes bump the **minor** version, and they are called out as such.
 
 ### Added
 
+- **Batch refunds for `RefundVault`**: `claim_batch(claims)` refunds multiple
+  claims in a single transaction, each processed with exactly the same logic,
+  checks, fees and events as `refund`, sharing one merchant authorization and
+  one reentrancy-lock acquisition. The batch is **atomic** — the first failing
+  claim returns its error and the Soroban transaction revert discards every
+  transfer, storage write and event of the batch, so either all claims persist
+  or none do. The float is read fresh from the token contract before every
+  element (so a batch cannot overdraw the vault), and repeated `payment_ref`s
+  accumulate against the same ceiling across elements. Each claim publishes its
+  own `RefundEvent` in claim order; an empty batch succeeds as a no-op. Callers
+  pass a `Vec<RefundClaim>`, a `#[contracttype]` struct mirroring the `refund`
+  arguments (`payment_ref`, `recipient`, `amount`, `paid_at_ledger`,
+  `payment_amount`). This is an **additive** change: `refund` and every existing
+  endpoint are unchanged (the shared claim path is extracted verbatim), and gas
+  is pinned by a budget test asserting a ten-claim batch stays well under the
+  default CPU and memory limits and scales near-linearly with a single claim.
+
 - **Refund fees for `RefundVault`**: the merchant can configure a fee deducted
   from every successful refund — `set_fee_bps(bps)` fixes the rate (basis
   points, up to 10_000) and `set_fee_recipient(recipient)` the collector

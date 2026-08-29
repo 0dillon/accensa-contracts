@@ -3,7 +3,7 @@
 use accensa_common::Error;
 use soroban_sdk::{
     contract, contractclient, contractevent, contractimpl, contractmeta, contracttype, token,
-    Address, BytesN, Env, Symbol,
+    Address, BytesN, Env, Symbol, Vec,
 };
 
 contractmeta!(key = "name", val = "RefundVault");
@@ -84,6 +84,24 @@ pub struct PolicyProposal {
     /// rejected. `0` disables the deadline ("no expiry").
     pub deadline: u64,
     pub proposed_at_ledger: u32,
+}
+
+/// Parameters for a single refund claim, mirroring the arguments of
+/// [`RefundVault::refund`]. One element of a [`RefundVault::claim_batch`]
+/// call.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RefundClaim {
+    pub payment_ref: BytesN<32>,
+    pub recipient: Address,
+    /// Amount to refund in this call (before any configured fee is deducted).
+    pub amount: i128,
+    /// Ledger at which the original payment occurred (window is measured from
+    /// here, never from a partial).
+    pub paid_at_ledger: u32,
+    /// The original payment amount — the hard ceiling on cumulative refunds —
+    /// supplied fresh on every claim.
+    pub payment_amount: i128,
 }
 
 #[contracttype]
@@ -384,6 +402,151 @@ fn active_fee_recipient(env: &Env) -> Address {
         })
 }
 
+/// Shared single-claim logic used by both [`RefundVault::refund`] and
+/// [`RefundVault::claim_batch`].
+///
+/// The caller is responsible for the per-invocation concerns: acquiring the
+/// reentrancy lock, checking `IsPaused`, and authorizing the merchant. This
+/// function applies the claim itself — validations (amount, self-transfer,
+/// legacy record, window, deadline, ceiling, float), fee split and transfers,
+/// cumulative-record storage and TTL extension, and the [`RefundEvent`].
+///
+/// The float is read from the token contract fresh on **every** call, so a
+/// batch that overdraws the vault on a later claim fails there exactly as a
+/// sequence of single refunds would.
+fn claim_single(env: &Env, claim: &RefundClaim) -> Result<(), Error> {
+    if claim.amount <= 0 {
+        return Err(Error::InvalidAmount);
+    }
+
+    if claim.recipient == env.current_contract_address() {
+        return Err(Error::SelfTransfer);
+    }
+
+    // Legacy record: the payment was fully refunded under the single-refund
+    // rule. Reject explicitly rather than mis-decoding the old shape.
+    if env
+        .storage()
+        .persistent()
+        .has(&DataKey::Refund(claim.payment_ref.clone()))
+    {
+        return Err(Error::ExceedsPayment);
+    }
+
+    let window: u32 = env
+        .storage()
+        .instance()
+        .get(&DataKey::RefundWindow)
+        .unwrap();
+    if window > 0 {
+        let current_ledger = env.ledger().sequence();
+        if current_ledger > claim.paid_at_ledger + window {
+            return Err(Error::WindowExpired);
+        }
+    }
+
+    // Policy deadline: a wall-clock timestamp configured with the policy.
+    // `0` (or unset) means no deadline. Expiry is strictly past the deadline,
+    // so a claim landing exactly on the deadline still succeeds.
+    let deadline: u64 = env
+        .storage()
+        .instance()
+        .get(&DataKey::RefundDeadline)
+        .unwrap_or(0);
+    if deadline > 0 && env.ledger().timestamp() > deadline {
+        return Err(Error::RefundExpired);
+    }
+
+    // Ceiling check: cumulative refunds must not exceed the original amount.
+    // The ceiling is read from the (re)stored record, freshly minted on the
+    // first partial for this payment.
+    let existing: Option<RefundRecord> = env
+        .storage()
+        .persistent()
+        .get(&DataKey::RefundV2(claim.payment_ref.clone()));
+    let (previous_refunded, record_ceiling) = match existing {
+        Some(rec) => (rec.amount_refunded, rec.payment_amount),
+        None => (0i128, claim.payment_amount),
+    };
+
+    if previous_refunded.checked_add(claim.amount).is_none()
+        || record_ceiling <= 0
+        || previous_refunded + claim.amount > record_ceiling
+    {
+        return Err(Error::ExceedsPayment);
+    }
+
+    let token_addr: Address = env.storage().instance().get(&DataKey::Token).unwrap();
+    let token_client = token::Client::new(env, &token_addr);
+    let balance = token_client.balance(&env.current_contract_address());
+    if balance < claim.amount {
+        return Err(Error::InsufficientFloat);
+    }
+
+    // Fee: a fraction (basis points) of the claim is diverted to the fee
+    // recipient; `recipient` receives the remainder. Total outflow is still
+    // exactly `amount`, so the float check above and the ceiling check against
+    // the payment amount are unchanged. The fee rounds *up* (the
+    // fractional-token remainder goes to the protocol).
+    let fee_bps: u32 = env.storage().instance().get(&DataKey::FeeBps).unwrap_or(0);
+    let fee = refund_fee(claim.amount, fee_bps);
+    let payout = claim.amount - fee;
+
+    let fee_recipient = if fee > 0 {
+        let r = active_fee_recipient(env);
+        if r == env.current_contract_address() {
+            return Err(Error::SelfTransfer);
+        }
+        Some(r)
+    } else {
+        None
+    };
+
+    token_client.transfer(&env.current_contract_address(), &claim.recipient, &payout);
+    if let Some(r) = fee_recipient {
+        token_client.transfer(&env.current_contract_address(), &r, &fee);
+    }
+
+    let cumulative_refunded = previous_refunded + claim.amount;
+    let current_ledger = env.ledger().sequence();
+    let record = RefundRecord {
+        amount_refunded: cumulative_refunded,
+        payment_amount: record_ceiling,
+        paid_at_ledger: claim.paid_at_ledger,
+        recipient: claim.recipient.clone(),
+        ledger: current_ledger,
+    };
+
+    env.storage()
+        .persistent()
+        .set(&DataKey::RefundV2(claim.payment_ref.clone()), &record);
+
+    env.storage()
+        .instance()
+        .extend_ttl(TTL_THRESHOLD, TTL_EXTEND);
+    let extend_to = refund_record_ttl_extend_to(env, window, claim.paid_at_ledger);
+    // Threshold == extend_to (not TTL_THRESHOLD): see
+    // `refund_record_ttl_extend_to` for why a small fixed threshold makes
+    // this a no-op on a freshly-written entry.
+    env.storage().persistent().extend_ttl(
+        &DataKey::RefundV2(claim.payment_ref.clone()),
+        extend_to,
+        extend_to,
+    );
+
+    RefundEvent {
+        payment_ref: claim.payment_ref.clone(),
+        amount: claim.amount,
+        fee,
+        cumulative_refunded,
+        recipient: record.recipient,
+        ledger: record.ledger,
+    }
+    .publish(env);
+
+    Ok(())
+}
+
 #[contract]
 pub struct RefundVault;
 
@@ -486,6 +649,9 @@ impl RefundVault {
     /// payment), not against a previous partial — each partial does not extend
     /// the window for the next.
     ///
+    /// This is a thin wrapper around the same shared claim path as
+    /// [`RefundVault::claim_batch`].
+    ///
     /// Storage note (#99): the layout changed from a single `amount` record to a
     /// cumulative record under a new `RefundV2` key. A `Refund` key written by
     /// the legacy single-refund rule still denotes a fully-refunded payment and
@@ -510,12 +676,60 @@ impl RefundVault {
             return Err(Error::Paused);
         }
 
-        if amount <= 0 {
-            return Err(Error::InvalidAmount);
-        }
+        let merchant: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .ok_or(Error::NotInitialized)?;
+        merchant.require_auth();
 
-        if recipient == env.current_contract_address() {
-            return Err(Error::SelfTransfer);
+        let claim = RefundClaim {
+            payment_ref,
+            recipient,
+            amount,
+            paid_at_ledger,
+            payment_amount,
+        };
+        claim_single(&env, &claim)?;
+
+        release_reentrancy_lock(&env);
+        Ok(())
+    }
+
+    /// Refund multiple claims in a single transaction.
+    ///
+    /// Every element of `claims` is processed in order with exactly the same
+    /// logic as a [`RefundVault::refund`] call — validations, ceilings, fees,
+    /// the float check, cumulative-record storage, TTL extension and a
+    /// [`RefundEvent`] per element — so the whole batch shares one merchant
+    /// authorization and one reentrancy-lock acquisition. Unrelated
+    /// `payment_ref`s are independent; repeated refs accumulate against the
+    /// same ceiling across elements.
+    ///
+    /// The float is read afresh from the token contract before every element,
+    /// so a batch can never overdraw the vault any more than an equivalent
+    /// sequence of single refunds, and `paid_at_ledger` / `payment_amount` are
+    /// evaluated per claim.
+    ///
+    /// # Atomicity
+    ///
+    /// If any element fails, the call returns that error. A contract error
+    /// reverts the entire Soroban invocation — including the token transfers,
+    /// storage writes and events of the claims that already succeeded within
+    /// this call — so the batch is all-or-nothing: either every claim
+    /// persists, or none of them do.
+    ///
+    /// An empty `claims` vector succeeds as a no-op.
+    pub fn claim_batch(env: Env, claims: Vec<RefundClaim>) -> Result<(), Error> {
+        acquire_reentrancy_lock(&env)?;
+
+        if env
+            .storage()
+            .instance()
+            .get(&DataKey::IsPaused)
+            .unwrap_or(false)
+        {
+            return Err(Error::Paused);
         }
 
         let merchant: Address = env
@@ -525,126 +739,9 @@ impl RefundVault {
             .ok_or(Error::NotInitialized)?;
         merchant.require_auth();
 
-        // Legacy record: the payment was fully refunded under the single-refund
-        // rule. Reject explicitly rather than mis-decoding the old shape.
-        if env
-            .storage()
-            .persistent()
-            .has(&DataKey::Refund(payment_ref.clone()))
-        {
-            return Err(Error::ExceedsPayment);
+        for claim in claims.iter() {
+            claim_single(&env, &claim)?;
         }
-
-        let window: u32 = env
-            .storage()
-            .instance()
-            .get(&DataKey::RefundWindow)
-            .unwrap();
-        if window > 0 {
-            let current_ledger = env.ledger().sequence();
-            if current_ledger > paid_at_ledger + window {
-                return Err(Error::WindowExpired);
-            }
-        }
-
-        // Policy deadline: a wall-clock timestamp configured with the policy.
-        // `0` (or unset) means no deadline. Expiry is strictly past the
-        // deadline, so a claim landing exactly on the deadline still succeeds.
-        let deadline: u64 = env
-            .storage()
-            .instance()
-            .get(&DataKey::RefundDeadline)
-            .unwrap_or(0);
-        if deadline > 0 && env.ledger().timestamp() > deadline {
-            return Err(Error::RefundExpired);
-        }
-
-        // Ceiling check: cumulative refunds must not exceed the original amount.
-        // The ceiling is read from the (re)stored record, freshly minted on the
-        // first partial for this payment.
-        let existing: Option<RefundRecord> = env
-            .storage()
-            .persistent()
-            .get(&DataKey::RefundV2(payment_ref.clone()));
-        let (previous_refunded, record_ceiling) = match existing {
-            Some(rec) => (rec.amount_refunded, rec.payment_amount),
-            None => (0i128, payment_amount),
-        };
-
-        if previous_refunded.checked_add(amount).is_none()
-            || record_ceiling <= 0
-            || previous_refunded + amount > record_ceiling
-        {
-            return Err(Error::ExceedsPayment);
-        }
-
-        let token_addr: Address = env.storage().instance().get(&DataKey::Token).unwrap();
-        let token_client = token::Client::new(&env, &token_addr);
-        let balance = token_client.balance(&env.current_contract_address());
-        if balance < amount {
-            return Err(Error::InsufficientFloat);
-        }
-
-        // Fee: a fraction (basis points) of the claim is diverted to the fee
-        // recipient; `recipient` receives the remainder. Total outflow is still
-        // exactly `amount`, so the float check above and the ceiling check
-        // against the payment amount are unchanged. The fee rounds *up* (the
-        // fractional-token remainder goes to the protocol).
-        let fee_bps: u32 = env.storage().instance().get(&DataKey::FeeBps).unwrap_or(0);
-        let fee = refund_fee(amount, fee_bps);
-        let payout = amount - fee;
-
-        let fee_recipient = if fee > 0 {
-            let r = active_fee_recipient(&env);
-            if r == env.current_contract_address() {
-                return Err(Error::SelfTransfer);
-            }
-            Some(r)
-        } else {
-            None
-        };
-
-        token_client.transfer(&env.current_contract_address(), &recipient, &payout);
-        if let Some(r) = fee_recipient {
-            token_client.transfer(&env.current_contract_address(), &r, &fee);
-        }
-
-        let cumulative_refunded = previous_refunded + amount;
-        let current_ledger = env.ledger().sequence();
-        let record = RefundRecord {
-            amount_refunded: cumulative_refunded,
-            payment_amount: record_ceiling,
-            paid_at_ledger,
-            recipient: recipient.clone(),
-            ledger: current_ledger,
-        };
-
-        env.storage()
-            .persistent()
-            .set(&DataKey::RefundV2(payment_ref.clone()), &record);
-
-        env.storage()
-            .instance()
-            .extend_ttl(TTL_THRESHOLD, TTL_EXTEND);
-        let extend_to = refund_record_ttl_extend_to(&env, window, paid_at_ledger);
-        // Threshold == extend_to (not TTL_THRESHOLD): see
-        // `refund_record_ttl_extend_to` for why a small fixed threshold makes
-        // this a no-op on a freshly-written entry.
-        env.storage().persistent().extend_ttl(
-            &DataKey::RefundV2(payment_ref.clone()),
-            extend_to,
-            extend_to,
-        );
-
-        RefundEvent {
-            payment_ref,
-            amount,
-            fee,
-            cumulative_refunded,
-            recipient: record.recipient,
-            ledger: record.ledger,
-        }
-        .publish(&env);
 
         release_reentrancy_lock(&env);
         Ok(())
