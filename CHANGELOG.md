@@ -82,12 +82,21 @@ breaking changes bump the **minor** version, and they are called out as such.
 
 ### Changed
 
+- **CI fixes**: the `build-wasm` job now builds the deployable contract crates
+  with `--workspace --exclude testutils` — the `testutils` workspace member
+  activates `soroban-sdk`'s `testutils` feature, which is not supported on the
+  `wasm32v1-none` target and made every wasm build fail at the SDK boundary.
+  The `ReceiptAnchor` budget gate in `fuzz_test.rs` is re-baselined for
+  `verify_receipt`: the pure-WASM SHA-256 folding merged in #250 moved hashing
+  out of the host into WASM, raising the host CPU instruction count for that
+  path (~569.9k → ~780.8k) while cutting WASM instructions; the gate's limits
+  now reflect the current implementation (measured 2026-08-29) and still allow
+  15% headroom for toolchain drift.
 - **Lower-cost Merkle proof verification** (issue #125): `ReceiptShard` and
   `ReceiptAnchor` now fold sorted-pair proofs in a single iterative pure-WASM
   SHA-256 loop, avoiding redundant proof buffering and host crypto roundtrips.
   Batch-size instruction measurements were added to the ReceiptAnchor test suite
   and documented in `docs/BENCHMARKS.md`.
-
 - **Advanced WASM Memory Management for Merkle Proofs** (issue #139):
   Refactored `ReceiptShard::verify_receipt` to copy host vector inputs into a stack-allocated
   static buffer (`proof_buffer: [[u8; 32]; 128]`) and perform intermediate hashing using the pure Wasm
