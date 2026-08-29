@@ -10,6 +10,17 @@ breaking changes bump the **minor** version, and they are called out as such.
 
 ### Added
 
+- **Best-effort batch refunds for `RefundVault`**: `process_batch(refunds)`
+  processes up to 100 claims in one transaction (`Vec<RefundParam>`, same shape
+  as `RefundClaim`) under a single merchant authorization, returning
+  `Vec<bool>` with one entry per claim. A failing claim is recorded as `false`
+  and processing continues, so valid claims in a mixed batch complete rather
+  than the whole call aborting; a batch larger than 100 claims fails with
+  `BatchTooLarge`. Every claim runs the identical per-claim logic as `refund`
+  (deadline, ceiling, float, and the configured fee), publishing a
+  `RefundEvent` per applied claim. Non-atomic by design — callers that require
+  all-or-nothing semantics should use `claim_batch` instead.
+
 - **Batch refunds for `RefundVault`**: `claim_batch(claims)` refunds multiple
   claims in a single transaction, each processed with exactly the same logic,
   checks, fees and events as `refund`, sharing one merchant authorization and
@@ -71,6 +82,11 @@ breaking changes bump the **minor** version, and they are called out as such.
 
 ### Changed
 
+- **Advanced WASM Memory Management for Merkle Proofs** (issue #139):
+  Refactored `ReceiptShard::verify_receipt` to copy host vector inputs into a stack-allocated
+  static buffer (`proof_buffer: [[u8; 32]; 128]`) and perform intermediate hashing using the pure Wasm
+  `sha2` crate. This eliminates all guest heap allocations and host roundtrips for intermediate hashes,
+  ensuring a flat guest memory footprint across all Merkle tree depths.
 - **`RefundVault` token generality is documented and pinned** (issue #166): the
   vault treats all amounts as raw integer units in the token's smallest unit and
   performs no decimal arithmetic, so any SEP-41 precision behaves identically.

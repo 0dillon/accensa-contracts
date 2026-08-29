@@ -17,6 +17,16 @@ contractmeta!(key = "commit", val = env!("GIT_SHA"));
 contractmeta!(key = "commit_dirty", val = env!("GIT_DIRTY"));
 
 #[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RefundParam {
+    pub payment_ref: BytesN<32>,
+    pub recipient: Address,
+    pub amount: i128,
+    pub paid_at_ledger: u32,
+    pub payment_amount: i128,
+}
+
+#[contracttype]
 pub enum DataKey {
     Admin,
     Token,
@@ -402,8 +412,8 @@ fn active_fee_recipient(env: &Env) -> Address {
         })
 }
 
-/// Shared single-claim logic used by both [`RefundVault::refund`] and
-/// [`RefundVault::claim_batch`].
+/// Shared single-claim logic used by [`RefundVault::refund`],
+/// [`RefundVault::claim_batch`], and [`RefundVault::process_batch`].
 ///
 /// The caller is responsible for the per-invocation concerns: acquiring the
 /// reentrancy lock, checking `IsPaused`, and authorizing the merchant. This
@@ -546,6 +556,11 @@ fn claim_single(env: &Env, claim: &RefundClaim) -> Result<(), Error> {
 
     Ok(())
 }
+
+/// Maximum number of refund requests allowed in a single `process_batch` call.
+/// Bounds CPU and memory usage to ensure the transaction stays within Soroban
+/// limits.
+const MAX_REFUND_BATCH_SIZE: u32 = 100;
 
 #[contract]
 pub struct RefundVault;
@@ -742,9 +757,57 @@ impl RefundVault {
         for claim in claims.iter() {
             claim_single(&env, &claim)?;
         }
-
         release_reentrancy_lock(&env);
         Ok(())
+    }
+
+    /// Processes a batch of refund requests in a single transaction.
+    ///
+    /// Design choice: Best-effort execution model with per-item result booleans.
+    /// Each refund is processed with exactly the same per-claim logic as
+    /// [`RefundVault::refund`] (via the shared `claim_single` helper), so the
+    /// pause, auth, window, deadline, ceiling, float, and fee checks all apply
+    /// per item. If an individual refund fails (e.g. `ExceedsPayment` or
+    /// `WindowExpired`), it records `false` for that item and continues
+    /// processing subsequent items rather than aborting the entire batch. This
+    /// allows valid refunds in a multi-item batch to complete successfully.
+    ///
+    /// Unlike [`RefundVault::claim_batch`], this is *not* atomic: a failing
+    /// item does not roll back the others, and no reentrancy lock is held, so
+    /// callers that require all-or-nothing semantics should use `claim_batch`.
+    pub fn process_batch(env: Env, refunds: Vec<RefundParam>) -> Result<Vec<bool>, Error> {
+        if env
+            .storage()
+            .instance()
+            .get(&DataKey::IsPaused)
+            .unwrap_or(false)
+        {
+            return Err(Error::Paused);
+        }
+
+        let merchant: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .ok_or(Error::NotInitialized)?;
+        merchant.require_auth();
+
+        if refunds.len() > MAX_REFUND_BATCH_SIZE {
+            return Err(Error::BatchTooLarge);
+        }
+
+        let mut results = Vec::new(&env);
+        for item in refunds.into_iter() {
+            let claim = RefundClaim {
+                payment_ref: item.payment_ref,
+                recipient: item.recipient,
+                amount: item.amount,
+                paid_at_ledger: item.paid_at_ledger,
+                payment_amount: item.payment_amount,
+            };
+            results.push_back(claim_single(&env, &claim).is_ok());
+        }
+        Ok(results)
     }
 
     pub fn withdraw(env: Env, amount: i128, to: Address) -> Result<(), Error> {
@@ -1452,8 +1515,11 @@ impl RefundVault {
     }
 }
 
+#[cfg(test)]
 mod fuzz_test;
+#[cfg(test)]
 mod reentrancy_tests;
+#[cfg(test)]
 mod test;
 mod token_agnostic_tests;
 mod yield_tests;

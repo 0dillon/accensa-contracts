@@ -124,6 +124,13 @@ re-entrancy surface. See [AUDIT.md](AUDIT.md) §2 and §5 for the full treatment
 - **Threat:** An attacker tries to refund a negative amount to cause an underflow or steal funds.
 - **Mitigation:** Explicit validation ensures that the `amount` is strictly greater than zero (`InvalidAmount` error) before executing token transfers, preventing unintended arithmetic behaviors or logical exploits.
 
+## Balance Invariants
+
+### RefundVault Token Balance Invariant (#94)
+- **Invariant:** The total internal token balance of `RefundVault` MUST at all times equal total merchant deposits minus total processed refunds minus total merchant withdrawals:
+  `Token Balance == Net Deposits - Total Refunds - Total Withdrawals`
+- **Verification:** Property-based/fuzz tests (`test_fuzz_refund_vault_balance_invariant` in `contracts/refund-vault/src/fuzz_test.rs`) continuously verify this invariant across randomized series of deposits, refunds, and withdrawals.
+
 ### Self-Transfer and Phantom Refunds
 - **Threat:** An indexer or batch pipeline bug supplies the contract's own address as `recipient` in `refund` or `claim_batch` (or as `to` in `withdraw`). A self-transfer leaves float untouched while permanently consuming the `payment_ref` and emitting a `RefundEvent` for funds the buyer never received.
 - **Mitigation:** `refund`, every claim inside `claim_batch`, and `withdraw` explicitly validate that `recipient != env.current_contract_address()` and `to != env.current_contract_address()`, rejecting violations with `Error::SelfTransfer` before any persistent state is written or events emitted.
@@ -132,6 +139,7 @@ re-entrancy surface. See [AUDIT.md](AUDIT.md) §2 and §5 for the full treatment
 ### Batch Refund Integrity
 - **Threat:** A batch of refunds is only partially correct — some claims succeed while an earlier or later one fails — leaving a mix of paid and unpaid claims that an indexer can misread, or letting a batch overdraw the float one claim at a time.
 - **Mitigation:** `claim_batch` is **atomic**: the first failing claim returns its error and, because a contract error reverts the whole Soroban invocation, all transfers, storage writes and events of the batch are discarded together. Either every claim persists or none do (pinned by `test_claim_batch_partial_failure_reverts_everything` and `test_claim_batch_float_checked_per_item`). The float is read fresh from the token contract before every element, so a later claim observes the reduced balance left by earlier ones and can no more overdraw the vault than the equivalent sequence of single refunds; a repeated `payment_ref` accumulates against the same ceiling across elements. Each claim still runs the full per-claim validations, so one malicious element cannot skip the checks of the rest.
+- **`process_batch` is deliberately non-atomic:** it is a *best-effort* API (bounded at 100 claims) that returns a `Vec<bool>` per claim; a failing element is recorded as `false` and processing continues, so a mixed batch applies the valid claims and leaves the `false` items unrefunded (`test_process_batch_mixed_success_failure`). This is not a partial-failure vulnerability — per-element failures are contract errors localised to that element by design — but consumers must reconcile the returned booleans against their own ledger, and must use `claim_batch` whenever all-or-nothing semantics are required. Every element of `process_batch` runs the same per-claim checks as `refund`/`claim_batch`, including the deadline and fee, so a failing item can never bypass the pool of sibling items' validations.
 
 ### Refund Fee Integrity
 - **Threat:** A refund fee mis-accounts for the claim, so a buyer's payout or the collector's cut is wrong — either leaking float to a fee collector or short-changing the buyer.
@@ -141,6 +149,7 @@ re-entrancy surface. See [AUDIT.md](AUDIT.md) §2 and §5 for the full treatment
 
 ### Token Address Changeability
 - **Guarantee:** A vault initialized with an incorrect token address can be recovered via `set_token` if and only if the vault holds zero balance (`balance == 0`). If the vault contains any active float (`balance > 0`), `set_token` is rejected with `Error::FloatNotEmpty`. This allows correction of deployment-time typos without ever permitting an admin to swap the underlying asset out from under a funded vault.
+
 
 ## Storage Security
 

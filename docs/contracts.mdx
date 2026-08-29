@@ -136,6 +136,20 @@ fn claim_batch(env: Env, claims: Vec<RefundClaim>) -> Result<(), Error>
 - **Emits:** one `RefundEvent` per claim, in claim order.
 - **Empty batch:** an empty `claims` vector succeeds as a no-op.
 
+### `process_batch`
+Best-effort batch refunds: processes up to `MAX_REFUND_BATCH_SIZE` (100) claims in one transaction, returning a `Vec<bool>` with one entry per claim (`true` = the claim was applied, `false` = it failed). A failing claim does **not** abort the batch — the remaining claims are still processed, so valid items in a mixed batch complete. Each claim runs the identical per-claim logic as `refund` (via the shared `claim_single` helper), including the policy deadline check and the configured fee split.
+
+```rust
+fn process_batch(env: Env, refunds: Vec<RefundParam>) -> Result<Vec<bool>, Error>
+```
+
+- **Authentication:** Requires the merchant's signature (checked once for the whole batch).
+- **`RefundParam` fields:** `payment_ref: BytesN<32>`, `recipient: Address`, `amount: i128`, `paid_at_ledger: u32`, `payment_amount: i128` — the same shape as `RefundClaim`.
+- **Errors (whole call):** `Paused`, missing admin, or `BatchTooLarge` when `refunds.len() > 100`. Per-item failures are reported through the returned booleans, never as a whole-call error.
+- **Emits:** one `RefundEvent` per successfully applied claim, in claim order.
+- **Atomicity:** non-atomic by design — a failing item leaves earlier successes intact. Use `claim_batch` when all-or-nothing semantics are required.
+- **Fees:** a configured fee applies per applied claim, exactly as in `refund` / `claim_batch`.
+
 ### `withdraw`
 Returns float from the vault to an address of the merchant's choosing.
 
