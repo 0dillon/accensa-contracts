@@ -52,10 +52,6 @@ pub enum DataKey {
     /// already fully refunded under the old rule.
     Refund(BytesN<32>),
     IsPaused,
-    Metadata,
-    RefundMax,
-    Admins,
-    Threshold,
     PendingAdmin,
     YieldStrategy,
     DeployedPrincipal,
