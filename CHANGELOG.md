@@ -113,6 +113,10 @@ breaking changes bump the **minor** version, and they are called out as such.
   with `--workspace --exclude testutils` — the `testutils` workspace member
   activates `soroban-sdk`'s `testutils` feature, which is not supported on the
   `wasm32v1-none` target and made every wasm build fail at the SDK boundary.
+  The `.wasm-budget.json` size budgets are updated to the current deterministic
+  release builds (receipt-anchor 33,067 B, refund-vault 85,453 B) with ~5%
+  headroom — the exact-pin approach kept breaking on toolchain drift, and the
+  refund-vault budget had not caught up with the VDF crypto code.
   The `ReceiptAnchor` budget gate in `fuzz_test.rs` is re-baselined for
   `verify_receipt`: the pure-WASM SHA-256 folding merged in #250 moved hashing
   out of the host into WASM, raising the host CPU instruction count for that
