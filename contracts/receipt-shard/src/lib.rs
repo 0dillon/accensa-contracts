@@ -10,6 +10,7 @@
 //! enforces that writes land inside its own assigned range.
 
 use accensa_common::Error;
+use sha2::{Digest, Sha256};
 use soroban_sdk::{contract, contractimpl, contractmeta, contracttype, Address, BytesN, Env, Vec};
 
 contractmeta!(key = "name", val = "ReceiptShard");
@@ -158,10 +159,9 @@ impl ReceiptShard {
                 combined[..32].copy_from_slice(&sibling);
                 combined[32..].copy_from_slice(&computed_hash);
             }
-            computed_hash = env
-                .crypto()
-                .sha256(&soroban_sdk::Bytes::from_slice(&env, &combined))
-                .to_array();
+            let mut hasher = Sha256::new();
+            hasher.update(combined);
+            computed_hash = hasher.finalize().into();
         }
         computed_hash
     }
