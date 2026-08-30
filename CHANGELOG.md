@@ -10,6 +10,13 @@ breaking changes bump the **minor** version, and they are called out as such.
 
 ### Added
 
+- **ZK validity proof batch anchoring for `ReceiptAnchor`**: `anchor_batch_zk`
+  allows merchants to anchor batch state roots on-chain by providing a Groth16
+  zero-knowledge validity proof (`ZkProof`), verifying validity in $O(1)$ time
+  and saving computational overhead on-chain. Added `verify_zk_proof` to verify
+  Groth16 proofs against verifying keys and public inputs, and introduced
+  `Error::InvalidProof` (code 203).
+
 - **Best-effort batch refunds for `RefundVault`**: `process_batch(refunds)`
   processes up to 100 claims in one transaction (`Vec<RefundParam>`, same shape
   as `RefundClaim`) under a single merchant authorization, returning
