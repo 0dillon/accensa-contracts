@@ -1272,3 +1272,101 @@ fn test_verify_receipt_memory_scaling_benchmark() {
         );
     }
 }
+
+#[test]
+fn test_anchor_batch_zk_valid_proof_succeeds() {
+    let (env, client, merchant) = setup();
+    init(&env, &client, &merchant);
+
+    let state_root = BytesN::from_array(&env, &[42u8; 32]);
+    let proof = ZkProof {
+        a: Bytes::from_slice(&env, &[1u8; 64]),
+        b: Bytes::from_slice(&env, &[2u8; 128]),
+        c: Bytes::from_slice(&env, &[3u8; 64]),
+    };
+
+    let batch_id = client.anchor_batch_zk(&state_root, &proof, &50, &100, &200);
+    assert_eq!(batch_id, 1);
+
+    let record = client.get_batch(&batch_id);
+    assert_eq!(record.root, state_root);
+    assert_eq!(record.count, 50);
+    assert_eq!(record.period_start, 100);
+    assert_eq!(record.period_end, 200);
+}
+
+#[test]
+fn test_anchor_batch_zk_invalid_proof_rejected() {
+    let (env, client, merchant) = setup();
+    init(&env, &client, &merchant);
+
+    let state_root = BytesN::from_array(&env, &[42u8; 32]);
+
+    // Corrupted / all-zero proof
+    let invalid_proof = ZkProof {
+        a: Bytes::from_slice(&env, &[0u8; 64]),
+        b: Bytes::from_slice(&env, &[0u8; 128]),
+        c: Bytes::from_slice(&env, &[0u8; 64]),
+    };
+
+    assert_eq!(
+        client.try_anchor_batch_zk(&state_root, &invalid_proof, &50, &100, &200),
+        Err(Ok(Error::InvalidProof))
+    );
+
+    // Empty proof bytes
+    let empty_proof = ZkProof {
+        a: Bytes::new(&env),
+        b: Bytes::new(&env),
+        c: Bytes::new(&env),
+    };
+
+    assert_eq!(
+        client.try_anchor_batch_zk(&state_root, &empty_proof, &50, &100, &200),
+        Err(Ok(Error::InvalidProof))
+    );
+}
+
+#[test]
+fn test_verify_zk_proof_end_to_end() {
+    let (env, client, merchant) = setup();
+    init(&env, &client, &merchant);
+
+    let proof = ZkProof {
+        a: Bytes::from_slice(&env, &[1u8; 64]),
+        b: Bytes::from_slice(&env, &[2u8; 128]),
+        c: Bytes::from_slice(&env, &[3u8; 64]),
+    };
+
+    let mut ic_vec = soroban_sdk::Vec::new(&env);
+    ic_vec.push_back(Bytes::from_slice(&env, &[10u8; 64]));
+    ic_vec.push_back(Bytes::from_slice(&env, &[11u8; 64]));
+
+    let vk = VerifyingKey {
+        alpha_g1: Bytes::from_slice(&env, &[4u8; 64]),
+        beta_g2: Bytes::from_slice(&env, &[5u8; 128]),
+        gamma_g2: Bytes::from_slice(&env, &[6u8; 128]),
+        delta_g2: Bytes::from_slice(&env, &[7u8; 128]),
+        ic: ic_vec,
+    };
+
+    let mut public_inputs = soroban_sdk::Vec::new(&env);
+    public_inputs.push_back(BytesN::from_array(&env, &[99u8; 32]));
+
+    // Valid proof + valid VK + matching public input count -> true
+    assert!(client.verify_zk_proof(&proof, &vk, &public_inputs));
+
+    // Mismatched public inputs count -> false
+    let mut mismatched_inputs = soroban_sdk::Vec::new(&env);
+    mismatched_inputs.push_back(BytesN::from_array(&env, &[99u8; 32]));
+    mismatched_inputs.push_back(BytesN::from_array(&env, &[100u8; 32]));
+    assert!(!client.verify_zk_proof(&proof, &vk, &mismatched_inputs));
+
+    // Corrupted proof -> false
+    let corrupted_proof = ZkProof {
+        a: Bytes::from_slice(&env, &[0u8; 64]),
+        b: Bytes::from_slice(&env, &[0u8; 128]),
+        c: Bytes::from_slice(&env, &[0u8; 64]),
+    };
+    assert!(!client.verify_zk_proof(&corrupted_proof, &vk, &public_inputs));
+}

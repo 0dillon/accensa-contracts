@@ -1286,7 +1286,6 @@ name = "receipt-shard"
 version = "0.1.0"
 dependencies = [
  "accensa-common",
- "sha2",
  "soroban-sdk",
 ]
 
