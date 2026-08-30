@@ -70,6 +70,8 @@ they were charged correctly, with no trusted API in the path.
 |---|---|
 | `initialize(merchant)` | Binds the contract to a merchant admin address. |
 | `anchor_batch(root, count, period_start, period_end) -> u64` | Anchors a batch root, returns its `batch_id`. Merchant auth required. `count` must be $\le$ 1000 (`MAX_BATCH_SIZE`). Rate-limited if `min_anchor_interval > 0`. |
+| `anchor_batch_zk(state_root, proof, count, period_start, period_end) -> u64` | Anchors a batch by verifying a ZK validity proof of the batch state root. |
+| `verify_zk_proof(proof, vk, public_inputs) -> bool` | Verifies a Groth16 zero-knowledge proof against public inputs in $O(1)$ time. |
 | `get_batch(batch_id) -> BatchRecord` | Reads an anchored batch. |
 | `get_batch_count() -> u64` | Returns the total number of anchored batches. Read-only. |
 | `get_admin() -> Address` | Returns the configured merchant admin address. Read-only; fails with `NotInitialized` before `initialize`. |
@@ -252,6 +254,7 @@ contracts instead of per-contract tables.
 | 200 | `RootNotFound` | The Merkle root is not in the historical ring buffer. |
 | 201 | `ProofTooLong` | The Merkle proof exceeds `MAX_PROOF_LEN`. |
 | 202 | `AnchorRateLimited` | An anchor was submitted before the minimum interval elapsed. |
+| 203 | `InvalidProof` | The zero-knowledge validity proof is invalid or malformed. |
 | 300 | `NoPendingPolicy` | No pending policy change exists to execute. |
 | 301 | `TimelockNotExpired` | The policy timelock period has not yet elapsed. |
 | 302 | `FuturePaidAtLedger` | A refund reported `paid_at_ledger` in the future (greater than the current ledger sequence). |

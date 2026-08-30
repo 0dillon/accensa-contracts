@@ -1,10 +1,13 @@
 #![no_std]
 
+pub mod zk_verifier;
+
 use accensa_common::Error;
 use soroban_sdk::{
     contract, contractclient, contractevent, contractimpl, contractmeta, contracttype, Address,
     BytesN, Env, InvokeError, Vec,
 };
+pub use zk_verifier::{VerifyingKey, ZkProof};
 
 contractmeta!(key = "name", val = "ReceiptAnchor");
 contractmeta!(key = "version", val = env!("CARGO_PKG_VERSION"));
@@ -184,8 +187,37 @@ impl ReceiptAnchor {
         Ok(())
     }
 
+    /// Anchors a batch of receipts using a state root.
     pub fn anchor_batch(
         env: Env,
+        root: BytesN<32>,
+        count: u32,
+        period_start: u64,
+        period_end: u64,
+    ) -> Result<u64, Error> {
+        Self::anchor_batch_internal(&env, root, count, period_start, period_end)
+    }
+
+    /// Anchors a batch of receipts by verifying a ZK validity proof of the state root.
+    /// Returns the assigned `batch_id` upon successful verification.
+    pub fn anchor_batch_zk(
+        env: Env,
+        state_root: BytesN<32>,
+        proof: ZkProof,
+        count: u32,
+        period_start: u64,
+        period_end: u64,
+    ) -> Result<u64, Error> {
+        let is_valid = zk_verifier::verify_batch_zk_proof(&env, &state_root, &proof, count)?;
+        if !is_valid {
+            return Err(Error::InvalidProof);
+        }
+        Self::anchor_batch_internal(&env, state_root, count, period_start, period_end)
+    }
+
+    /// Internal batch anchoring helper.
+    fn anchor_batch_internal(
+        env: &Env,
         root: BytesN<32>,
         count: u32,
         period_start: u64,
@@ -231,10 +263,10 @@ impl ReceiptAnchor {
         }
         let batch_id = batch_count + 1;
         let shard_index = (batch_id - 1) / SHARD_CAPACITY;
-        let shard_addr = Self::get_or_create_shard(&env, shard_index)?;
+        let shard_addr = Self::get_or_create_shard(env, shard_index)?;
 
         let anchored_ledger = env.ledger().sequence();
-        ShardClient::new(&env, &shard_addr).anchor_batch(
+        ShardClient::new(env, &shard_addr).anchor_batch(
             &batch_id,
             &root,
             &count,
@@ -272,9 +304,19 @@ impl ReceiptAnchor {
             period_end,
             anchored_ledger,
         }
-        .publish(&env);
+        .publish(env);
 
         Ok(batch_id)
+    }
+
+    /// Verifies a Groth16 zero-knowledge proof against public inputs and a verifying key.
+    pub fn verify_zk_proof(
+        env: Env,
+        proof: ZkProof,
+        vk: VerifyingKey,
+        public_inputs: Vec<BytesN<32>>,
+    ) -> Result<bool, Error> {
+        zk_verifier::verify_groth16(&env, &proof, &vk, &public_inputs)
     }
 
     pub fn get_batch(env: Env, batch_id: u64) -> Result<BatchRecord, Error> {

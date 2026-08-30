@@ -84,6 +84,8 @@ pub enum Error {
     ProofTooLong = 201,
     /// An anchor was submitted before the minimum interval elapsed.
     AnchorRateLimited = 202,
+    /// The supplied zero-knowledge validity proof is invalid or malformed.
+    InvalidProof = 203,
     /// No pending policy change exists to execute.
     NoPendingPolicy = 300,
     /// The timelock period has not yet elapsed.

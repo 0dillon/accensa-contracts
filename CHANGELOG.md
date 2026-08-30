@@ -10,6 +10,7 @@ breaking changes bump the **minor** version, and they are called out as such.
 
 ### Added
 
+<<<<<<< HEAD
 - **VDF-gated refunds for `RefundVault`** (issue #138): the refund policy now
   carries a Verifiable Delay Function requirement — `propose_policy(ledgers,
   deadline, vdf_delay)` configures a delay in squarings (subject to the same
@@ -36,6 +37,14 @@ breaking changes bump the **minor** version, and they are called out as such.
   contract's modulus is a fixed constant with its factors discarded after
   generation; a production deployment should replace it with a
   ceremony-chosen modulus (see `docs/SECURITY_MODEL.md` § "VDF Fairness").
+=======
+- **ZK validity proof batch anchoring for `ReceiptAnchor`**: `anchor_batch_zk`
+  allows merchants to anchor batch state roots on-chain by providing a Groth16
+  zero-knowledge validity proof (`ZkProof`), verifying validity in $O(1)$ time
+  and saving computational overhead on-chain. Added `verify_zk_proof` to verify
+  Groth16 proofs against verifying keys and public inputs, and introduced
+  `Error::InvalidProof` (code 203).
+>>>>>>> main
 
 - **Best-effort batch refunds for `RefundVault`**: `process_batch(refunds)`
   processes up to 100 claims in one transaction (`Vec<RefundParam>`, same shape
@@ -338,3 +347,4 @@ the transactions that created them are recorded in
 [0.3.0]: https://github.com/accensa/accensa-contracts/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/accensa/accensa-contracts/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/accensa/accensa-contracts/releases/tag/v0.1.0
+
