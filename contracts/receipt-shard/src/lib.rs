@@ -54,8 +54,6 @@ const TTL_THRESHOLD: u32 = 100;
 /// MAX_BATCH_SIZE = 1000 (router constant), that is 10.
 const MAX_PROOF_LEN: u32 = 10;
 
-use sha2::{Digest, Sha256};
-
 #[contract]
 pub struct ReceiptShard;
 
@@ -162,9 +160,10 @@ impl ReceiptShard {
                 combined[..32].copy_from_slice(sibling);
                 combined[32..].copy_from_slice(&computed_hash);
             }
-            let mut hasher = Sha256::new();
-            hasher.update(combined);
-            computed_hash = hasher.finalize().into();
+            computed_hash = env
+                .crypto()
+                .sha256(&soroban_sdk::Bytes::from_slice(&env, &combined))
+                .to_array();
         }
 
         Ok(computed_hash == batch.root.to_array())
