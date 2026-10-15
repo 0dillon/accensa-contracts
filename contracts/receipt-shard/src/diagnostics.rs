@@ -25,9 +25,9 @@
 //! new batches are anchored; `consistent` stays `true` in that case because
 //! every invariant below holds trivially for zero counters.
 
-use accensa_common::Error;
 use crate::{pruning::RETENTION_LEDGERS, MAX_PROOF_LEN};
 use crate::{BatchRecord, DataKey, ReceiptShard, ReceiptShardArgs, ReceiptShardClient};
+use accensa_common::Error;
 use soroban_sdk::{contractimpl, contracttype, Env};
 
 /// Read-only operational snapshot of a shard.
@@ -216,7 +216,7 @@ impl ReceiptShard {
             && live_batches <= high_water.saturating_sub(cursor)
             && live_leaves <= total_leaves
             && max_merkle_depth <= MAX_PROOF_LEN;
-        ShardDiagnostics {
+        Ok(ShardDiagnostics {
             start_batch_id: start,
             end_batch_id: end,
             oldest_unpruned_batch_id: cursor,

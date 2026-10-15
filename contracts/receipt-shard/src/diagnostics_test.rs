@@ -2,10 +2,10 @@
 
 #![cfg(test)]
 
-use accensa_common::Error;
 use crate::diagnostics::{merkle_depth, ShardDiagnostics};
 use crate::pruning::RETENTION_LEDGERS;
 use crate::{DataKey, ReceiptShard, ReceiptShardClient};
+use accensa_common::Error;
 use soroban_sdk::{
     testutils::{Address as _, Ledger},
     Address, BytesN, Env,
