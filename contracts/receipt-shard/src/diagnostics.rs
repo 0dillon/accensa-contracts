@@ -25,6 +25,7 @@
 //! new batches are anchored; `consistent` stays `true` in that case because
 //! every invariant below holds trivially for zero counters.
 
+use accensa_common::Error;
 use crate::{pruning::RETENTION_LEDGERS, MAX_PROOF_LEN};
 use crate::{BatchRecord, DataKey, ReceiptShard, ReceiptShardArgs, ReceiptShardClient};
 use soroban_sdk::{contractimpl, contracttype, Env};
@@ -176,10 +177,21 @@ impl ReceiptShard {
     ///   (`live_batches <= high_water - oldest_unpruned`);
     /// - `max_merkle_depth` does not exceed the maximum verifiable proof
     ///   length, so every anchored batch can still be proven.
-    pub fn get_shard_diagnostics(env: Env) -> ShardDiagnostics {
+    ///
+    /// # Errors
+    ///
+    /// [`Error::NotInitialized`] when the instance storage has lost
+    /// `StartBatchId`/`EndBatchId` — e.g. an idle shard whose instance entry
+    /// TTL-evicts the range keys — instead of trapping this read-only call
+    /// (issue #615).
+    pub fn get_shard_diagnostics(env: Env) -> Result<ShardDiagnostics, Error> {
         let storage = env.storage().instance();
-        let start: u64 = storage.get(&DataKey::StartBatchId).unwrap();
-        let end: u64 = storage.get(&DataKey::EndBatchId).unwrap();
+        let start: u64 = storage
+            .get(&DataKey::StartBatchId)
+            .ok_or(Error::NotInitialized)?;
+        let end: u64 = storage
+            .get(&DataKey::EndBatchId)
+            .ok_or(Error::NotInitialized)?;
         let cursor: u64 = storage.get(&DataKey::PrunedUpTo).unwrap_or(start);
         let stats = load(&env);
         let high_water = stats.high_water.max(start);
@@ -216,6 +228,6 @@ impl ReceiptShard {
             max_merkle_depth,
             storage_entries: live_batches,
             consistent,
-        }
+        })
     }
 }
