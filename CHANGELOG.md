@@ -8,6 +8,18 @@ breaking changes bump the **minor** version, and they are called out as such.
 
 ## [Unreleased]
 
+- test: pin the previously unasserted event trails. `yield_tests` now asserts
+  `StrategyApprovalEvent` for both the approval and the revocation
+  (distinguished by the payload `approved` flag) and `YieldDistributedEvent`
+  with its amount tied to the token balances moved in the same call, and shows
+  the rejected deploy paths emit no event; `splice_test` asserts
+  `ChannelSplicedInEvent` / `ChannelSplicedOutEvent` by exact XDR with
+  `new_amount` cross-checked against the channel capacity read back after the
+  splice, and that a failed splice emits nothing; `commit_reveal_tests` asserts
+  `CommitEvent` / `CommitRevealedEvent` shapes, that a replayed reveal emits
+  nothing and leaves the stored last-claim value untouched, and that two users
+  advance only their own `UserNonce`. Tests only — no contract behavior
+  changed.
 - security(multisig): implement 14-day TTL expiration for pending signatures and approvals (#449)
 - **`nft` (issue #453): Discount coupon NFTs for merchant stores.** New coupon
   module (`contracts/refund-vault/src/coupons.rs`) implements single-use discount
