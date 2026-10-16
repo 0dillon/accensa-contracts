@@ -26,6 +26,9 @@ breaking changes bump the **minor** version, and they are called out as such.
   accepts an optional `coupon_id` parameter; when provided, the discount is applied
   atomically before the token transfer. Added error codes `CouponNotFound` and
   `CouponAlreadyRedeemed` to the common Error enum.
+- docs: rustdoc for `receipt-shard`'s 4 exported names (#749) and for the 5
+  public fields of `BuybackConfiguredEvent` (#790). Doc comments only — no
+  signature, struct layout or behaviour change.
 
 ### Added
 - **`privacy` (issue #440): Groth16 verification for concealed escrow amounts.**
