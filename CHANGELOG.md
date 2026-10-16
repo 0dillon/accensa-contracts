@@ -502,6 +502,19 @@ deposit)` escrows a buyer's deposit and streams it linearly to the
 
 ### Changed
 
+- **`common`: `keys` module docs now mark the namespace partition as reserved
+  (issue #626).** The module docs implied the partition was enforced
+  workspace-wide, but no contract imports `keys::` — every contract still
+  defines its own flat `DataKey` — so on-chain storage written today is not
+  routed through these namespaces. The docs now state there is no production
+  consumer, that adopting these key types in a deployed contract needs a
+  storage-compatibility plan (persisted ledger keys encode their namespace by
+  variant position), and scope the compile-time collision guarantee to this
+  module's own key enums. New unit tests pin `discriminant()` folding for
+  every namespace pair (boundary values of the 32-bit local window included)
+  and the uniqueness of each namespace's local discriminants. Documentation
+  and tests only — no public-item or behavior change.
+
 - **`receipt-anchor`: extracted `push_shard_root` and `check_no_duplicate_root`
   helpers from `anchor_batch_internal` (issue #292).** The ring-buffer update
   and per-shard duplicate-root guard are now private methods, shortening the
