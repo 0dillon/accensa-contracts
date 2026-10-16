@@ -544,6 +544,12 @@ deposit)` escrows a buyer's deposit and streams it linearly to the
   `test_events_emitted`, removing the repeated field-set boilerplate.
 
 ### Fixed
+- **`receipt-shard` (issue #642): typed errors from the config getters.**
+  `get_router` and `get_range` now return `Result<_, Error>` and answer
+  `NotInitialized` (2) when the instance config is absent — before construction
+  or after instance TTL eviction — instead of aborting the host call with a
+  generic error; a successful read extends the instance TTL the same way the
+  write paths do.
 - **`treasury`: the yield distribution module is now part of the build (issue
   #523).** #523 landed `distribution.rs` and `distribution_test.rs` without the
   `pub mod distribution;` / `#[cfg(test)] mod distribution_test;` declarations

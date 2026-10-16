@@ -269,20 +269,42 @@ impl ReceiptShard {
         (cursor, pruned)
     }
 
-    pub fn get_router(env: Env) -> Address {
-        env.storage().instance().get(&DataKey::Router).unwrap()
+    /// Returns the router address recorded at construction, or
+    /// `NotInitialized` when the instance has no router (never constructed,
+    /// or instance storage evicted after the durability window). A successful
+    /// read extends the instance TTL, matching the write paths.
+    pub fn get_router(env: Env) -> Result<Address, Error> {
+        let router: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Router)
+            .ok_or(Error::NotInitialized)?;
+        env.storage()
+            .instance()
+            .extend_ttl(TTL_THRESHOLD, TTL_EXTEND);
+        Ok(router)
     }
 
     /// Returns `(start_batch_id, end_batch_id)`, the shard's assigned
-    /// half-open range.
-    pub fn get_range(env: Env) -> (u64, u64) {
-        (
-            env.storage()
-                .instance()
-                .get(&DataKey::StartBatchId)
-                .unwrap(),
-            env.storage().instance().get(&DataKey::EndBatchId).unwrap(),
-        )
+    /// half-open range, or `NotInitialized` when the instance has no range
+    /// (never constructed, or instance storage evicted after the durability
+    /// window). A successful read extends the instance TTL, matching the
+    /// write paths.
+    pub fn get_range(env: Env) -> Result<(u64, u64), Error> {
+        let start: u64 = env
+            .storage()
+            .instance()
+            .get(&DataKey::StartBatchId)
+            .ok_or(Error::NotInitialized)?;
+        let end: u64 = env
+            .storage()
+            .instance()
+            .get(&DataKey::EndBatchId)
+            .ok_or(Error::NotInitialized)?;
+        env.storage()
+            .instance()
+            .extend_ttl(TTL_THRESHOLD, TTL_EXTEND);
+        Ok((start, end))
     }
 }
 
@@ -292,6 +314,8 @@ mod consolidation_test;
 pub mod diagnostics;
 #[cfg(test)]
 mod diagnostics_test;
+#[cfg(test)]
+mod getter_test;
 pub mod pruning;
 #[cfg(test)]
 mod pruning_test;
