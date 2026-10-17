@@ -8,8 +8,8 @@ breaking changes bump the **minor** version, and they are called out as such.
 
 ## [Unreleased]
 
-- **`upto-authorization` (issue #753): rustdoc for Error, DataKey, UptoAuthorization, initialize.**
-  Documented the 4 public items in `contracts/upto-authorization/src/lib.rs`.
+- **`refund-vault` (issue #683): return typed error on missing DomainSeparator in get_domain_separator.**
+  `get_domain_separator` returns `Result<BytesN<32>, Error>` with `Error::NotInitialized` when `DomainSeparator` is absent from instance storage instead of trapping.
 - **`receipt-shard` (issue #678): return typed error on missing state in has_live_records.**
   `has_live_records` returns `Result<bool, Error>` with `Error::NotInitialized` when `StartBatchId` or `EndBatchId` is absent from instance storage instead of trapping.
 - **`privacy` (issue #439): dual-key stealth-address registry for vault deposits.**
