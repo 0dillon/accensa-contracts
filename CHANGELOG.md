@@ -8,6 +8,11 @@ breaking changes bump the **minor** version, and they are called out as such.
 
 ## [Unreleased]
 
+- **`common` (issue #745): rustdoc for the reentrancy module's 4 exported
+  names.** `contracts/common/src/reentrancy.rs` now documents
+  `ReentrancyDataKey`, `ReentrancyGuard`, `acquire` (pre-condition plus the
+  `Error::ReentrancyBlocked` arm) and `release`. Doc comments only — no
+  signature, body, ordering or test change.
 - **`receipt-shard` (issue #679): `prune_batches` returns a typed error
   instead of trapping.** `prune_batches` now returns `Result<(u64, u64),
   Error>`; its three construction-time instance reads (`Router`, `EndBatchId`,
