@@ -8,6 +8,17 @@ breaking changes bump the **minor** version, and they are called out as such.
 
 ## [Unreleased]
 
+- **`accensa-common` (issue #570): inline tests for the shared nonce bitmap.**
+  `contracts/common/src/nonce.rs` gains an inline `#[cfg(test)]` suite pinning
+  `NonceBitmap::is_revoked`'s LSB-first bit order across all 32 bytes, the
+  256-slot aliasing produced by `nonce % 256` (nonce 0 and nonce 256 address
+  the same bit; every answer depends only on `nonce % 256`), and that reads
+  at the bitmap's edges — including the `u64` extremes that alias onto bit
+  255 — never panic and default to not revoked. The suite cross-checks the
+  bit layout against `state-channel`'s `NonceWindow` read formula
+  (`contracts/state-channel/src/nonce.rs`), the agreement both types'
+  documentation promises. Test-only — no contract behavior change; the type
+  stays exported with no production caller.
 ### Removed
 - Issue #572: Removed the uncompiled, unreferenced source files `contracts/governance/src/liquid_staking_impl.rs`, `contracts/refund-vault/src/guard.rs`, and `contracts/refund-vault/src/test/test/refund_vectors.rs`. No compiled contract behavior changed.
   
