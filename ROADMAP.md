@@ -79,4 +79,10 @@
   - `contracts/treasury/src/distribution.rs` — verified contract holding balance of yield token before mutating user `pending`/`claimed`
   - Added unit test in `contracts/treasury/src/distribution.rs` asserting typed error and unchanged pending yield
 
+## Issue #722: guard `preview_settlement`'s cumulative sum against overflow
+
+- [x] Route the `previous_refunded + amount` sum in `preview_settlement` through `add_amounts` (#722)
+  - `contracts/refund-vault/src/settlement.rs` — typed `Error::MathOverflow` instead of a host abort
+  - `contracts/refund-vault/src/preview_settlement_overflow_tests.rs` — boundary test pins both operands at `i128::MAX` and asserts the returned error variant
+
 
