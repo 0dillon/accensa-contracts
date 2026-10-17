@@ -8,6 +8,8 @@ breaking changes bump the **minor** version, and they are called out as such.
 
 ## [Unreleased]
 
+- **`upto-authorization` (issue #753): rustdoc for Error, DataKey, UptoAuthorization, initialize.**
+  Documented the 4 public items in `contracts/upto-authorization/src/lib.rs`.
 - **`receipt-shard` (issue #678): return typed error on missing state in has_live_records.**
   `has_live_records` returns `Result<bool, Error>` with `Error::NotInitialized` when `StartBatchId` or `EndBatchId` is absent from instance storage instead of trapping.
 - **`privacy` (issue #439): dual-key stealth-address registry for vault deposits.**
