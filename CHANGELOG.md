@@ -8,6 +8,8 @@ breaking changes bump the **minor** version, and they are called out as such.
 
 ## [Unreleased]
 
+- **`treasury` (issue #604): assert the four staking-distribution event shapes.**
+  Extended `contracts/treasury/src/distribution_test.rs` with `event_assertions` testing exact XDR event shapes for `StakedEvent`, `UnstakedEvent`, `YieldDistributedEvent`, and `YieldClaimedEvent`, verifying accumulator and total staked ordering on unequal distributions, and testing partial and zeroing claims. Test-only — no contract behavior change.
 - **`refund-policy-vdf` (issue #702): unit tests for fallback dispute resolution.**
   Extended `contracts/refund-policy-vdf/src/test.rs` with coverage for `request_dispute`, `oracle_request_bytes`, and `settle_dispute`.
 - **`stream-vault` / `multisig-account` (issues #752, #754): rustdoc coverage
