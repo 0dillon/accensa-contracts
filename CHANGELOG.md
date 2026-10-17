@@ -8,6 +8,28 @@ breaking changes bump the **minor** version, and they are called out as such.
 
 ## [Unreleased]
 
+- **`receipt-shard` (issue #551): replace panic and assert sites in `consolidate`
+  with typed Error variants.** `ReceiptShard::consolidate` now returns
+  `Result<u32, Error>` instead of panicking on user-reachable conditions: a
+  destination matching the source returns `Error::DestinationMismatch` (104), a
+  missing batch returns `Error::BatchNotFound` (100), and a cross-contract
+  round-trip mismatch returns `Error::RoundTripMismatch` (105) while leaving
+  source storage untouched.
+- **`chore` (issue #558): remove unreferenced `contracts/upgrade-proxy`.**
+  Deleted the stranded `contracts/upgrade-proxy/` directory which contained only
+  an unreferenced test stub without Cargo.toml, src/, or workspace membership.
+  In-place upgrade paths on Soroban use `env.deployer().update_current_contract_wasm`
+  as documented in ADR-003.
+- **`ci` (issue #555): run deploy dry-run smoke test and bounded differential fuzz harness.**
+  Added CI steps to run `tests/test_deploy.sh` in dry-run mode and execute
+  `tests/differential/bolero_test.rs` bounded invariant campaign. Added
+  `tests/README.md` with instructions for reproducing both tests locally.
+- **`docs` (issue #559): reconcile DEPLOYMENTS.md and docs/ARCHITECTURE.md with manifest versions.**
+  Refreshed version banner to indicate `main` is at `0.3.0` while testnet addresses
+  run `0.1.0`. Added explicit per-address deployed version tags, verification
+  commands via on-chain WASM bytecode inspection, a notice on stale deployments,
+  and aligned CLI examples.
+
 - **`state-channel` (issue #727): compute the hashlock reservation total with
   checked arithmetic.** `hashlock::add` now combines `already_reserved` and the
   new payment's `amount` through `accensa_common::math::add_amounts`, so an
