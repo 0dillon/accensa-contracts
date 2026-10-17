@@ -84,4 +84,7 @@
   - Updated `SUPPORT.md` to reference `soroban-sdk` 27.0.6 matching the resolved workspace pin
   - Cited `Cargo.lock` as the single source of truth for the SDK version
 
+## Issue #690: read the selected tier without unwrapping
 
+- [x] `set_tier_ladder` uses a checked lookup for the selected tier's fee (#690)
+  - `contracts/refund-vault/src/tiers.rs` — `set_tier_ladder` performs a checked `tiers.get(current_tier)` lookup with `Error::InvalidTierLadder` as a defensive fallback when the preserved volume points past the last rung; validated ladders retain their existing behaviour.
