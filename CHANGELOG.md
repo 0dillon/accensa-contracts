@@ -8,6 +8,18 @@ breaking changes bump the **minor** version, and they are called out as such.
 
 ## [Unreleased]
 
+- **`refund-vault` (issue #722): guard `preview_settlement`'s cumulative sum
+  against overflow.** The `previous_refunded + amount` sum in
+  `contracts/refund-vault/src/settlement.rs` now goes through
+  `accensa_common::math::add_amounts` instead of a bare `+`, so the failure arm
+  is the typed `Error::MathOverflow` (321) rather than a host abort (the
+  release profile sets `overflow-checks = true` with `panic = "abort"`). At the
+  boundary, `resolve_ceiling`'s ceiling gate rejects the non-representable
+  total first with `Error::ExceedsPayment`, so every overflowing input answers
+  with a typed variant. New
+  `contracts/refund-vault/src/preview_settlement_overflow_tests.rs` pins both
+  operands of the sum at `i128::MAX` and asserts the returned variant rather
+  than a panic.
 - **`treasury` (issue #649): return typed InsufficientBalance error on unfunded yield float.**
   `claim_yield` reads the contract's yield token balance before mutating user `pending` or `claimed` and returns `Error::InsufficientBalance` when the balance cannot cover the claim, leaving accrued yield intact.
 - **`insurance` (issue #608): assert deposit, withdraw, borrow and repay lifecycle events.**
