@@ -8,6 +8,13 @@ breaking changes bump the **minor** version, and they are called out as such.
 
 ## [Unreleased]
 
+- **`upto-authorization` / `governance` (issues #564, #565): pin the
+  domain-separator context and enforce the absolute quorum floor.**
+  `domain.rs` gains inline tests proving the authorization digest differs
+  across network ids, contract addresses and protocol versions, and is
+  reproducible for identical inputs. `current_quorum_bps` now raises a
+  `start_bps` below `QUORUM_FLOOR_BPS` to the floor, so the documented
+  absolute floor holds for every constructor-valid threshold.
 - **`governance` (issue #438): time-weighted vote escrow (veToken).**
   New `vetoken` module. A member locks governance tokens with `create_lock`
   for between 30 days and 4 years (`518_400` to `25_228_800` ledgers) and gets
