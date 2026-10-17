@@ -8,8 +8,8 @@ breaking changes bump the **minor** version, and they are called out as such.
 
 ## [Unreleased]
 
-- **`state-channel` (issue #612): assert watchtower bounty events and bounty key lifecycle.**
-  Extended `contracts/state-channel/src/watchtower_test.rs` asserting exact event XDR for `WatchtowerBountySetEvent` and `WatchtowerRewardEvent`, and pinned post-payout instance storage under `DataKey::Bounty`.
+- **`treasury` (issue #649): return typed InsufficientBalance error on unfunded yield float.**
+  `claim_yield` reads the contract's yield token balance before mutating user `pending` or `claimed` and returns `Error::InsufficientBalance` when the balance cannot cover the claim, leaving accrued yield intact.
 - **`insurance` (issue #608): assert deposit, withdraw, borrow and repay lifecycle events.**
   Extended `contracts/insurance/src/test.rs` with `lifecycle_events` asserting exact event XDR, cross-checking storage values, and asserting zero balance on emptied positions.
 - **`receipt-shard` (issue #678): return typed error on missing state in has_live_records.**
