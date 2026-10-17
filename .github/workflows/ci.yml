@@ -222,3 +222,28 @@ jobs:
           repository: accensa/accensa-app
           event-type: accensa-contracts-vector-update
           client-payload: '{"ref": "${{ github.sha }}"}'
+
+      - name: cargo deny
+        # Supply-chain gate (issue #554): `deny.toml` was committed but nothing
+        # ever ran it, so its policy was unenforced. Runs advisories, bans,
+        # licenses and sources against the *locked* workspace: the metadata
+        # step below fails if Cargo.toml and Cargo.lock disagree instead of
+        # silently re-resolving.
+        #
+        # The tool is pinned to the version `deny.toml` is written for (the
+        # config format is tied to the tool version — the file this repo carried
+        # before was rejected outright by 0.20.2 — so an unpinned cargo-deny
+        # could start rejecting `deny.toml` on a later release). The binary and the advisory
+        # database both live under `target/` (`db-path` in deny.toml), so the
+        # "Cache cargo" step above carries them between runs; the version check
+        # rebuilds the binary when the pin below changes.
+        run: |
+          set -euo pipefail
+          DENY_VERSION="0.20.2"
+          DENY_ROOT="target/cargo-deny-tools"
+          DENY_BIN="$DENY_ROOT/bin/cargo-deny"
+          if ! "$DENY_BIN" --version 2>/dev/null | grep -q " ${DENY_VERSION}$"; then
+            cargo install cargo-deny --version "$DENY_VERSION" --locked --root "$DENY_ROOT"
+          fi
+          cargo metadata --locked --format-version 1 > "$RUNNER_TEMP/cargo-metadata.json"
+          "$DENY_BIN" --metadata-path "$RUNNER_TEMP/cargo-metadata.json" check
