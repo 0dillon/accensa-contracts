@@ -8,6 +8,14 @@ breaking changes bump the **minor** version, and they are called out as such.
 
 ## [Unreleased]
 
+- **`reputation` (issue #621): credit key and event-payload parity tests.** Test-only
+  addition to `contracts/reputation/src/credit_score_test.rs` pinning the storage and
+  event surface of the credit scorer: `CreditDataKey::CompletionEscrow(u64)` replay
+  makes a duplicate escrow id a no-op on the score and the stored record, both
+  `record_completion` and `record_fraud` update the single shared
+  `CreditDataKey::Credit(Address)` entry, and the `CreditUpdatedEvent` payload is
+  asserted in full by XDR comparison on both paths, staying in agreement with the
+  getters and `get_fee_bps`. No contract behaviour change.
 - **`refund-vault` (issue #722): guard `preview_settlement`'s cumulative sum
   against overflow.** The `previous_refunded + amount` sum in
   `contracts/refund-vault/src/settlement.rs` now goes through
