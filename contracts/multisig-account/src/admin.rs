@@ -103,6 +103,9 @@ pub fn set_guardian(env: &Env, guardian: Option<Address>) {
 
 pub fn pause(env: &Env, caller: Address) -> Result<(), Error> {
     require_pause_authority(env, &caller)?;
+    if is_paused(env) {
+        return Err(Error::Paused);
+    }
     env.storage().instance().set(&DataKey::Paused, &true);
 
     PausedEvent {
@@ -150,5 +153,59 @@ pub fn is_allowed_while_paused(env: &Env, context: &Context) -> bool {
                     .any(|name| c.fn_name == Symbol::new(env, name))
         }
         _ => false,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::MultisigAccount;
+    use soroban_sdk::{testutils::Events as _, vec, Address, BytesN, Env, Event};
+
+    #[test]
+    fn pause_unpause_and_guardian_events_match_their_payloads() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let signer = Address::generate(&env);
+        let contract = env.register(MultisigAccount, (vec![&env, signer], 1));
+        let guardian = Address::generate(&env);
+
+        env.as_contract(&contract, || {
+            set_guardian(&env, Some(guardian.clone()));
+            pause(&env, guardian.clone()).unwrap();
+            assert_eq!(pause(&env, guardian.clone()), Err(Error::Paused));
+            unpause(&env, guardian.clone()).unwrap();
+            let queue_id = crate::timelock::queue_transaction(
+                &env,
+                BytesN::from_array(&env, &[1u8; 32]),
+                10,
+                1,
+                get_guardian(&env).unwrap(),
+            );
+            assert!(crate::timelock::cancel_queued_transaction(&env, queue_id, &guardian).is_ok());
+        });
+
+        let events = env.events().all().filter_by_contract(&contract);
+        assert_eq!(events.events().len(), 3);
+        let expected = [
+            GuardianSetEvent {
+                previous: None,
+                new: Some(guardian.clone()),
+            }
+            .to_xdr(&env, &contract),
+            PausedEvent {
+                ledger: env.ledger().sequence(),
+                by: guardian.clone(),
+            }
+            .to_xdr(&env, &contract),
+            UnpausedEvent {
+                ledger: env.ledger().sequence(),
+                by: guardian,
+            }
+            .to_xdr(&env, &contract),
+        ];
+        for (actual, expected) in events.events().iter().zip(expected.iter()) {
+            assert_eq!(actual, expected);
+        }
     }
 }
