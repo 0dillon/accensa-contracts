@@ -160,7 +160,10 @@ pub fn is_allowed_while_paused(env: &Env, context: &Context) -> bool {
 mod tests {
     use super::*;
     use crate::MultisigAccount;
-    use soroban_sdk::{testutils::Events as _, vec, Address, BytesN, Env, Event};
+    use soroban_sdk::{
+        testutils::{Address as _, Events as _},
+        vec, Address, BytesN, Env, Event,
+    };
 
     #[test]
     fn pause_unpause_and_guardian_events_match_their_payloads() {
