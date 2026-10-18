@@ -8,6 +8,7 @@ breaking changes bump the **minor** version, and they are called out as such.
 
 ## [Unreleased]
 
+- **Contract payload field documentation (#763, #764, #765):** Documented the public fields of governance `Proposal`, receipt-anchor `AnchorPayload`, and `RefundEventPayload`.
 - **`refund-vault` (issue #722): guard `preview_settlement`'s cumulative sum
   against overflow.** The `previous_refunded + amount` sum in
   `contracts/refund-vault/src/settlement.rs` now goes through
