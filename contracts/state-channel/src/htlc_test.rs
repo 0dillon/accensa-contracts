@@ -249,10 +249,8 @@ mod lifecycle_event_tests {
             amount,
         };
         assert_eq!(&events.events()[0], &expected.to_xdr(&env, &contract));
-        assert!(events
-            .events()
-            .iter()
-            .all(|event| event != &crate::htlc::HtlcRefundedEvent {
+        assert!(events.events().iter().all(|event| event
+            != &crate::htlc::HtlcRefundedEvent {
                 channel_id,
                 htlc_id,
                 amount,

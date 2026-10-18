@@ -33,11 +33,11 @@ use soroban_sdk::{
     Address, Env,
 };
 
+#[cfg(test)]
+mod init_guard_tests;
 pub mod interest;
 #[cfg(test)]
 mod test;
-#[cfg(test)]
-mod init_guard_tests;
 
 pub use interest::{
     accrue_interest, accrue_supply, borrow_rate, supply_rate, utilization_ratio, BASE_RATE_BPS,

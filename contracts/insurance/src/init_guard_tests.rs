@@ -7,7 +7,9 @@ fn setup() -> (Env, InsurancePoolClient<'static>, Address) {
     let env = Env::default();
     env.mock_all_auths();
     let admin = Address::generate(&env);
-    let token = env.register_stellar_asset_contract_v2(admin.clone()).address();
+    let token = env
+        .register_stellar_asset_contract_v2(admin.clone())
+        .address();
     let contract = env.register(InsurancePool, (admin, token));
     let client = InsurancePoolClient::new(&env, &contract);
     (env, client, contract)
