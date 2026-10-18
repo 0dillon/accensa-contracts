@@ -8,6 +8,11 @@ breaking changes bump the **minor** version, and they are called out as such.
 
 ## [Unreleased]
 
+- **`governance` (issue #552): test instance storage TTL eviction returns typed errors.**
+  Added tests in `contracts/governance/src/test.rs` asserting that `propose` and
+  `execute` operations return typed errors `InvalidVotingPeriod` and `InvalidMembers`
+  rather than panicking when instance storage TTL expires or mandatory config keys
+  are missing from instance storage.
 - **`ci` (issue #584): align Tier B budget-report comment with live `--check` enforcement.**
   The `.github/workflows/ci.yml` Tier B step comment and the `budget.toml`
   provenance header now accurately describe that `cargo budget-report --check`
