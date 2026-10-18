@@ -100,11 +100,13 @@ fn closed_at(record: &RefundRecord, window: u32) -> u32 {
 ///
 /// # Errors
 /// - `Paused`: the vault is paused.
-/// - `NotInitialized`: the vault admin is not configured.
+/// - `NotInitialized`: the vault admin or settlement token is not configured.
 /// - `RefundNotFound`: no refund record exists for `payment_ref`.
 /// - `MathOverflow`: the residual amount cannot be calculated.
 /// - `InvalidAmount`: the residual is negative or not below the dust threshold.
 /// - `TimelockNotExpired`: the dust sweep delay has not elapsed.
+/// - `SelfTransfer`: the treasury is the vault contract itself.
+/// - `InsufficientFloat`: the vault balance cannot cover the residual.
 /// - Errors returned by the reentrancy guard.
 pub(crate) fn sweep_dust(env: &Env, payment_ref: BytesN<32>) -> Result<i128, Error> {
     accensa_common::reentrancy::ReentrancyGuard::acquire(env)?;
