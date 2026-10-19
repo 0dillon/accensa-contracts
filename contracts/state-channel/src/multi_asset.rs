@@ -53,7 +53,11 @@ pub struct BalanceRecord {
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct MultiAssetChannel {
+    /// Address that escrowed every asset's `deposit` in `open`; `settle`
+    /// refunds it `deposit - receiver_balance` per asset.
     pub sender: Address,
+    /// Address entitled to the per-asset `receiver_balance` that `settle`
+    /// pays out.
     pub receiver: Address,
     /// Ed25519 public key used to verify off-chain state signatures.
     pub sender_pubkey: BytesN<32>,
@@ -61,11 +65,20 @@ pub struct MultiAssetChannel {
     pub assets: Map<Address, BalanceRecord>,
     /// Latest accepted state nonce.
     pub nonce: u64,
+    /// Lifecycle stage: `open` writes `Open`, `close` moves it to `Closed`
+    /// (the challenge window runs from `closed_at`), and `settle` moves it
+    /// to `Finalized`.
     pub phase: ChannelPhase,
+    /// Ledger sequence recorded by `open`; an open channel past
+    /// `opened_at + max lifetime` can no longer be closed and may be
+    /// settled directly (`is_expired`).
     pub opened_at: u32,
     /// Ledger at which the channel was closed (or last challenged); `0` while
     /// open.
     pub closed_at: u32,
+    /// Dispute window in ledgers, applied by `effective_challenge_period` (0
+    /// selects the default, anything larger is capped) and enforced between
+    /// `close` and `settle`.
     pub challenge_period: u32,
 }
 
