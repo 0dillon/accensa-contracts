@@ -170,7 +170,7 @@ mod tests {
         let env = Env::default();
         env.mock_all_auths();
         let signer = Address::generate(&env);
-        let contract = env.register(MultisigAccount, (vec![&env, signer], 1));
+        let contract = env.register(MultisigAccount, (vec![&env, signer], 1u32));
         let guardian = Address::generate(&env);
 
         env.as_contract(&contract, || {
