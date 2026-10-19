@@ -18,6 +18,11 @@ exception: while the project is below `1.0.0`, breaking changes bump the
   contract behavior change.
 - **Internal tests (#655, #657):** Pinned the treasury vesting event shapes and the reputation SBT authority gate on `issue`, `revoke` and `slash`.
 - **Documentation (#756, #757, #761, #762):** Documented granular event payload fields and refund-vault APIs.
+- **Documentation (#783, #784, #785, #786):** Added `///` field docs to the
+  refund-vault `RefundParam`, `YieldInfo` and `CouponAppliedEvent` payloads and
+  to the state-channel `HtlcAddedEvent`, so rustdoc states the unit and the
+  writer path of each field instead of a bare name and type. Doc comments only —
+  no field, layout or behaviour change.
 
 - fix(refund-vault): route `resolve_ceiling`'s cumulative sum through the checked
   `accensa_common::math::add_amounts` helper, so an `i128` overflow in the
