@@ -8,6 +8,7 @@ breaking changes bump the **minor** version, and they are called out as such.
 
 ## [Unreleased]
 
+- **Contract payload field documentation (#763, #764, #765):** Documented the public fields of governance `Proposal`, receipt-anchor `AnchorPayload`, and `RefundEventPayload`.
 - **`refund-vault` (issue #685): report a missing payment token from
   `deploy_to_yield` instead of aborting.** The `DataKey::Token` read in
   `contracts/refund-vault/src/lib.rs` was an `unwrap()`, so a deployment that
