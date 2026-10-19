@@ -12,6 +12,14 @@
   - Exchange rate progression and lock-epoch-based redemption
   - CHANGELOG.md entry added
 
+## Issue #660: PR template verification step runs the full workspace suite
+
+- [x] Point the PR template's Verification checkbox at `cargo test --workspace` (#660)
+
+## Issue #658: CHANGELOG's pre-1.0 versioning policy matches RELEASING.md
+
+- [x] State the pre-1.0 minor-for-breaking rule once in `docs/RELEASING.md` and cite it from `CHANGELOG.md` (#658)
+
 ## Issue #670: iterate members in the governance constructor
 
 - [x] `Governance::__constructor` iterates `members`/`deposits` instead of `get(i).unwrap()` (#670)
