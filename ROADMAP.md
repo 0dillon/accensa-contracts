@@ -161,3 +161,13 @@
 
 - [x] Document the struct's 5 public fields (#787)
   - `contracts/state-channel/src/lib.rs` — doc comments only, no signature, body, order or derive changes
+
+## Issue #788: rustdoc for `MultiAssetChannel`'s 5 public fields
+
+- [x] Document `sender`, `receiver`, `phase`, `opened_at` and `challenge_period` (#788)
+  - `contracts/state-channel/src/multi_asset.rs` — doc comments only, field/type/order/derives unchanged
+
+## Issue #792: rustdoc for `AuthorizeEvent`'s 5 public fields
+
+- [x] Document `payment_id`, `from`, `to`, `cap` and `expiry` (#792)
+  - `contracts/upto-authorization/src/lib.rs` — doc comments only, field/type/order/derives unchanged
