@@ -8,6 +8,12 @@ exception: while the project is below `1.0.0`, breaking changes bump the
 **minor** version, and they are called out as such.
 
 ## [Unreleased]
+- **`refund-vault` (issue #638): flash-loan event shape pinned by tests.**
+  `FlashLoanEvent` is asserted by exact topic tuple
+  (`("flash_loan_event", receiver)`) and payload on a repaid loan, with its
+  recorded fee and principal cross-checked against the token balances moved by
+  the same invocation; both revert paths are shown to publish no flash-loan
+  event. Test-only — no contract behavior change.
 - **`refund-vault` (issue #620): per-strategy approval key semantics pinned by
   tests.** New `per_strategy_approval_key` module in
   `contracts/refund-vault/src/strategy_tests.rs` approves two strategies,
