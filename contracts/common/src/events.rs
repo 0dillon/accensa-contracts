@@ -157,12 +157,19 @@ pub struct TransferEventPayload {
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RefundEventPayload {
+    /// Merchant address supplied to `emit_refund`.
     pub merchant: Address,
+    /// Address receiving the refund, supplied to `emit_refund`.
     pub recipient: Address,
+    /// Address of the refunded asset, supplied to `emit_refund`.
     pub asset: Address,
+    /// Amount supplied to `emit_refund`, in the caller's units.
     pub amount: i128,
+    /// Fee supplied to `emit_refund`, in the caller's units.
     pub fee: i128,
+    /// 32-byte reference for the payment being refunded.
     pub payment_ref: BytesN<32>,
+    /// Ledger timestamp captured by `emit_refund` when it creates the payload.
     pub timestamp: u64,
 }
 
