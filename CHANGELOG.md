@@ -8,6 +8,14 @@ exception: while the project is below `1.0.0`, breaking changes bump the
 **minor** version, and they are called out as such.
 
 ## [Unreleased]
+- **`refund-vault` (issue #620): per-strategy approval key semantics pinned by
+  tests.** New `per_strategy_approval_key` module in
+  `contracts/refund-vault/src/strategy_tests.rs` approves two strategies,
+  deploys to each in turn, and shows that revoking one leaves the other
+  approved, active and deployable; that an address which was never approved is
+  rejected with `StrategyNotApproved` at both registration and deployment; and
+  that re-approving is idempotent (one revoke clears it). Test-only — no
+  contract behavior change.
 - **Internal tests (#655, #657):** Pinned the treasury vesting event shapes and the reputation SBT authority gate on `issue`, `revoke` and `slash`.
 - **Documentation (#756, #757, #761, #762):** Documented granular event payload fields and refund-vault APIs.
 
