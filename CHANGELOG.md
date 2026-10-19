@@ -8,6 +8,8 @@ exception: while the project is below `1.0.0`, breaking changes bump the
 **minor** version, and they are called out as such.
 
 ## [Unreleased]
+- **`stream-vault` (issue #607): assert all five stream-vault lifecycle event shapes.**
+  Walk a stream through create, partial claim, pause, resume, and cancel transitions, asserting exact XDR shapes for `StreamCreatedEvent`, `StreamClaimedEvent`, `StreamPausedEvent`, `StreamResumedEvent`, and `StreamCancelledEvent`. Test-only — no contract behavior change.
 - **`refund-vault` (issue #638): flash-loan event shape pinned by tests.**
   `FlashLoanEvent` is asserted by exact topic tuple
   (`("flash_loan_event", receiver)`) and payload on a repaid loan, with its
