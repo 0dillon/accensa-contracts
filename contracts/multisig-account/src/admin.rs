@@ -170,7 +170,7 @@ mod tests {
         let env = Env::default();
         env.mock_all_auths();
         let signer = Address::generate(&env);
-        let contract = env.register(MultisigAccount, (vec![&env, signer], 1));
+        let contract = env.register(MultisigAccount, (vec![&env, signer], 1u32));
         let client = crate::MultisigAccountClient::new(&env, &contract);
         let guardian = Address::generate(&env);
 
@@ -196,7 +196,10 @@ mod tests {
 
         assert_eq!(client.try_pause(&guardian), Err(Ok(Error::Paused)));
         let events = env.events().all().filter_by_contract(&contract);
-        assert!(events.events().iter().all(|event| event != &expected_pause));
+        assert!(events
+            .events()
+            .iter()
+            .all(|event| event != &expected_pause));
 
         client.unpause(&guardian);
         let events = env.events().all().filter_by_contract(&contract);
