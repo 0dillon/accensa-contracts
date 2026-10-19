@@ -9,6 +9,15 @@ exception: while the project is below `1.0.0`, breaking changes bump the
 
 ## [Unreleased]
 - **Documentation (#750, #751):** Documented the 4 public items of refund-vault `nft_escrow` (`deposit`, `claim`, `refund`, `get`) and the 4 of state-channel `multi_asset` (`MultiAssetChannelOpenedEvent`, `MultiAssetSettledEvent`, `open`, `get`) with `///` rustdoc, covering role, pre-conditions and each `Error` arm for off-chain integrators; comments only, no code change.
+- **`cross-chain` (issue #618): pin the Axelar replay guard and credited balance
+  keys by tests.** New `replay_guard_and_credited_keys` module in
+  `contracts/cross-chain/src/axelar_test.rs` asserts that a duplicate message id
+  returns the typed replay error with no second credit and no
+  `AxelarDepositCreditedEvent`, that two distinct messages accumulate into
+  `Credited`, that ids differing only by a trailing space are treated as
+  distinct, and that a credit is stored under the Axelar `DataKey` namespace
+  rather than a router-level `crate::DataKey`. Test-only — no contract behavior
+  change.
 - **`stream-vault` (issue #607): assert all five stream-vault lifecycle event shapes.**
   Walk a stream through create, partial claim, pause, resume, and cancel transitions, asserting exact XDR shapes for `StreamCreatedEvent`, `StreamClaimedEvent`, `StreamPausedEvent`, `StreamResumedEvent`, and `StreamCancelledEvent`. Test-only — no contract behavior change.
 - **`refund-vault` (issue #638): flash-loan event shape pinned by tests.**
