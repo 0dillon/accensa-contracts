@@ -170,45 +170,58 @@ mod tests {
         let env = Env::default();
         env.mock_all_auths();
         let signer = Address::generate(&env);
-        let contract = env.register(MultisigAccount, (vec![&env, signer], 1u32));
+        let contract = env.register(MultisigAccount, (vec![&env, signer], 1));
+        let client = crate::MultisigAccountClient::new(&env, &contract);
         let guardian = Address::generate(&env);
 
+        client.set_guardian(&Some(guardian.clone()));
+        let events = env.events().all().filter_by_contract(&contract);
+        assert_eq!(events.events().len(), 1);
+        let expected = GuardianSetEvent {
+            previous: None,
+            new: Some(guardian.clone()),
+        }
+        .to_xdr(&env, &contract);
+        assert_eq!(&events.events()[0], &expected);
+
+        client.pause(&guardian);
+        let events = env.events().all().filter_by_contract(&contract);
+        assert_eq!(events.events().len(), 1);
+        let expected_pause = PausedEvent {
+            ledger: env.ledger().sequence(),
+            by: guardian.clone(),
+        }
+        .to_xdr(&env, &contract);
+        assert_eq!(&events.events()[0], &expected_pause);
+
+        assert_eq!(client.try_pause(&guardian), Err(Ok(Error::Paused)));
+        let events = env.events().all().filter_by_contract(&contract);
+        assert!(events
+            .events()
+            .iter()
+            .all(|event| event != &expected_pause));
+
+        client.unpause(&guardian);
+        let events = env.events().all().filter_by_contract(&contract);
+        assert_eq!(events.events().len(), 1);
+        let expected = UnpausedEvent {
+            ledger: env.ledger().sequence(),
+            by: guardian.clone(),
+        }
+        .to_xdr(&env, &contract);
+        assert_eq!(&events.events()[0], &expected);
+
+        let recorded_guardian = client.get_guardian().unwrap();
+        assert_eq!(recorded_guardian, guardian);
         env.as_contract(&contract, || {
-            set_guardian(&env, Some(guardian.clone()));
-            pause(&env, guardian.clone()).unwrap();
-            assert_eq!(pause(&env, guardian.clone()), Err(Error::Paused));
-            unpause(&env, guardian.clone()).unwrap();
             let queue_id = crate::timelock::queue_transaction(
                 &env,
                 BytesN::from_array(&env, &[1u8; 32]),
                 10,
                 1,
-                get_guardian(&env).unwrap(),
+                recorded_guardian,
             );
             assert!(crate::timelock::cancel_queued_transaction(&env, queue_id, &guardian).is_ok());
         });
-
-        let events = env.events().all().filter_by_contract(&contract);
-        assert_eq!(events.events().len(), 3);
-        let expected = [
-            GuardianSetEvent {
-                previous: None,
-                new: Some(guardian.clone()),
-            }
-            .to_xdr(&env, &contract),
-            PausedEvent {
-                ledger: env.ledger().sequence(),
-                by: guardian.clone(),
-            }
-            .to_xdr(&env, &contract),
-            UnpausedEvent {
-                ledger: env.ledger().sequence(),
-                by: guardian,
-            }
-            .to_xdr(&env, &contract),
-        ];
-        for (actual, expected) in events.events().iter().zip(expected.iter()) {
-            assert_eq!(actual, expected);
-        }
     }
 }
