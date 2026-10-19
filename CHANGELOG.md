@@ -30,6 +30,16 @@ exception: while the project is below `1.0.0`, breaking changes bump the
 - **`refund-vault` / `state-channel` (issues #128, #460):** Add commit-reveal, mock-yield and channel-splicing test suites. New `contracts/refund-vault/src/commit_reveal_tests.rs` pins the commit-reveal front-running mitigation (delayed reveal, single-use commitment, hash-mismatch rejection, merchant-only access); new `contracts/refund-vault/src/yield_tests.rs` adds a mock yield strategy harness covering strategy set/deposit/withdraw/harvest; new `contracts/state-channel/src/splice_test.rs` covers splice-in/splice-out capacity changes, reserved-escrow guards, non-positive amounts and unknown-channel errors. Test-only — no contract behavior change.
 - **Documentation (#787):** Documented the five public fields of state-channel `ChannelOpenedEvent` (`channel_id`, `sender`, `receiver`, `amount`, `challenge_period`) for off-chain decoders; comments only, no code change.
 
+- **`refund-policy-vdf` / `receipt-anchor` (issues #755, #778): rustdoc for
+  the fallback dispute helpers and the `RateLimitUpdatedEvent` fields.**
+  `contracts/refund-policy-vdf/src/fallback.rs` now documents
+  `request_dispute`, `settle_dispute` and `get_dispute` — pre-conditions,
+  error arms and the events each publishes. `contracts/receipt-anchor/src/lib.rs`
+  documents the 5 public fields of `RateLimitUpdatedEvent`: the before and
+  after burst capacity and refill interval, their caps (`MAX_RATE_BURST`,
+  `MAX_RATE_REFILL_INTERVAL`), the `{0, 0}` disabled-config cases, and the
+  ledger sequence of the change. Doc comments only — no signature, body,
+  ordering or test change.
 - fix(refund-vault): route `resolve_ceiling`'s cumulative sum through the checked
   `accensa_common::math::add_amounts` helper, so an `i128` overflow in the
   partial-refund ceiling computation surfaces as the typed error
