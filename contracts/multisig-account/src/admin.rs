@@ -196,10 +196,7 @@ mod tests {
 
         assert_eq!(client.try_pause(&guardian), Err(Ok(Error::Paused)));
         let events = env.events().all().filter_by_contract(&contract);
-        assert!(events
-            .events()
-            .iter()
-            .all(|event| event != &expected_pause));
+        assert!(events.events().iter().all(|event| event != &expected_pause));
 
         client.unpause(&guardian);
         let events = env.events().all().filter_by_contract(&contract);
