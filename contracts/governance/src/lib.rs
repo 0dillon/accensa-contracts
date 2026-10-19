@@ -71,6 +71,7 @@ mod ragequit;
 mod ring_sig;
 pub mod simulation;
 mod timelock;
+mod vetoken;
 mod voting;
 
 pub use liquid_staking::{
@@ -252,13 +253,21 @@ pub struct RingSignature {
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Proposal {
+    /// Address of the member who submitted the proposal.
     pub proposer: Address,
+    /// Address of the contract targeted by the proposed call.
     pub target: Address,
+    /// Function symbol to invoke on the target contract.
     pub function: Symbol,
+    /// Values passed as arguments to the proposed function.
     pub args: Vec<Val>,
+    /// Accumulated voting weight in favor of the proposal.
     pub yes_weight: u64,
+    /// Accumulated voting weight against the proposal.
     pub no_weight: u64,
+    /// Ledger number by which voting on the proposal ends.
     pub deadline_ledger: u32,
+    /// Whether the proposed call has been executed.
     pub executed: bool,
 }
 
@@ -442,7 +451,7 @@ impl Governance {
             .storage()
             .instance()
             .get(&DataKey::VotingPeriod)
-            .unwrap();
+            .ok_or(Error::InvalidVotingPeriod)?;
         let deadline_ledger = env.ledger().sequence() + voting_period;
 
         let proposal = Proposal {
@@ -622,8 +631,8 @@ impl Governance {
             return Err(Error::VotingClosed);
         }
         let mut weight: Option<u64> = None;
-        for i in 0..ring.len() {
-            let public_key = ring.get(i).unwrap();
+        for (i, public_key) in ring.iter().enumerate() {
+            let i = i as u32;
             let Some(member) = env
                 .storage()
                 .persistent()
@@ -715,17 +724,21 @@ impl Governance {
             return Err(Error::AlreadyExecuted);
         }
 
-        let total_weight: u64 = env.storage().instance().get(&DataKey::TotalWeight).unwrap();
+        let total_weight: u64 = env
+            .storage()
+            .instance()
+            .get(&DataKey::TotalWeight)
+            .ok_or(Error::InvalidMembers)?;
         let threshold_bps: u32 = env
             .storage()
             .instance()
             .get(&DataKey::ThresholdBps)
-            .unwrap();
+            .ok_or(Error::InvalidThreshold)?;
         let voting_period: u32 = env
             .storage()
             .instance()
             .get(&DataKey::VotingPeriod)
-            .unwrap();
+            .ok_or(Error::InvalidVotingPeriod)?;
 
         // A proposal's window opened the ledger it was created on; the
         // effective quorum decays linearly from the initial threshold toward
