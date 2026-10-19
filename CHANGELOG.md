@@ -7,6 +7,7 @@ policy in [`docs/RELEASING.md`](docs/RELEASING.md): while the project is pre-1.0
 breaking changes bump the **minor** version, and they are called out as such.
 
 ## [Unreleased]
+- **Internal tests (#655, #657):** Pinned the treasury vesting event shapes and the reputation SBT authority gate on `issue`, `revoke` and `slash`.
 - **Documentation (#756, #757, #761, #762):** Documented granular event payload fields and refund-vault APIs.
 
 - **Contract payload field documentation (#763, #764, #765):** Documented the public fields of governance `Proposal`, receipt-anchor `AnchorPayload`, and `RefundEventPayload`.
