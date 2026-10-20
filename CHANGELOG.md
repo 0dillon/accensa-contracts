@@ -22,6 +22,57 @@ exception: while the project is below `1.0.0`, breaking changes bump the
 - **Internal tests (#655, #657):** Pinned the treasury vesting event shapes and the reputation SBT authority gate on `issue`, `revoke` and `slash`.
 - **Documentation (#756, #757, #761, #762):** Documented granular event payload fields and refund-vault APIs.
 
+- **`reputation` (issue #726): guard `record_fraud`'s penalty product against
+  overflow.** `record_fraud` now computes its basis-point penalty with
+  `u128::checked_mul` instead of a bare `*`, so it no longer relies on the
+  release profile's `overflow-checks = true` trapping the host call. Both
+  factors are `u64`, and `(2^64 - 1)^2 < 2^128`, so the product is exact for
+  every score; the failure arm is a stated precondition rather than a new
+  error variant, since `CreditError` is out of scope. New
+  `contracts/reputation/src/credit_score_fraud_overflow_test.rs` drives
+  `old_score = u64::MAX` through the public entry point and asserts the exact
+  returned score instead of a host abort.
+- **`state-channel` (issue #727): compute the hashlock reservation total with
+  checked arithmetic.** `hashlock::add` now combines `already_reserved` and the
+  new payment's `amount` through `accensa_common::math::add_amounts`, so an
+  out-of-range sum surfaces `Error::MathOverflow` instead of relying on the
+  release profile's overflow trap. The escrow ceiling check immediately above
+  keeps every reachable sum in range; the new
+  `contracts/state-channel/src/hashlock_overflow_test.rs` drives the
+  reservation total to exactly `i128::MAX` and pins the typed rejection when
+  the next reservation update would step past it.
+- **`reputation` (issue #724): guard `apply_decay`'s final addition against
+  overflow.** The `SCORE_FLOOR + decayed` sum in `apply_decay` now uses
+  `checked_add` with an explicit failure arm instead of a bare `+`, so it no
+  longer relies on the release profile's `overflow-checks = true` trapping
+  the host call. Because the helper returns a plain `u64`, the arm is a
+  stated precondition rather than a typed error: `decayed` is the remainder
+  of the headroom `score - SCORE_FLOOR`, so the sum is at most `score` and
+  fits in `u64` for every input. New
+  `contracts/reputation/src/credit_score_decay_overflow_test.rs` drives
+  `u64::MAX`, the zero-remainder boundary and the saturated-interval case.
+- **`refund-vault` (issue #723): guard `recall_principal`'s sums against
+  overflow.** Both arithmetic sites in `contracts/refund-vault/src/strategy.rs`
+  now call `accensa_common::math::add_amounts` instead of a bare `+`: the
+  strategy-reported `principal_returned + yield_returned` balance cross-check
+  and the `HarvestedYield` accumulation. Because `[profile.release]` enables
+  `overflow-checks` with `panic = "abort"`, a raw `+` aborted the host call;
+  the checked helper surfaces the typed `Error::MathOverflow` (321) instead.
+  New `contracts/refund-vault/src/recall_principal_overflow_tests.rs` drives
+  both sums to `i128::MAX` and asserts the typed arm rather than a panic.
+- **`accensa-common` (issue #570): inline tests for the shared nonce bitmap.**
+  `contracts/common/src/nonce.rs` gains an inline `#[cfg(test)]` suite pinning
+  `NonceBitmap::is_revoked`'s LSB-first bit order across all 32 bytes, the
+  256-slot aliasing produced by `nonce % 256` (nonce 0 and nonce 256 address
+  the same bit; every answer depends only on `nonce % 256`), and that reads
+  at the bitmap's edges — including the `u64` extremes that alias onto bit
+  255 — never panic and default to not revoked. The suite cross-checks the
+  bit layout against `state-channel`'s `NonceWindow` read formula
+  (`contracts/state-channel/src/nonce.rs`), the agreement both types'
+  documentation promises. Test-only — no contract behavior change; the type
+  stays exported with no production caller.
+### Removed
+- Issue #572: Removed the uncompiled, unreferenced source files `contracts/governance/src/liquid_staking_impl.rs`, `contracts/refund-vault/src/guard.rs`, and `contracts/refund-vault/src/test/test/refund_vectors.rs`. No compiled contract behavior changed.
 - **`reputation` (issue #725): guard `record_completion`'s growth product and
   sum against overflow.** `record_completion` now computes its growth with
   `u128::checked_mul` and applies it with `u64::checked_add` instead of a bare
