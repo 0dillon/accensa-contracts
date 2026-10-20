@@ -107,6 +107,10 @@
   - `contracts/treasury/src/distribution.rs` — verified contract holding balance of yield token before mutating user `pending`/`claimed`
   - Added unit test in `contracts/treasury/src/distribution.rs` asserting typed error and unchanged pending yield
 
+## Issue #725: guard `record_completion`'s growth product and sum against overflow
+
+- [x] `record_completion` computes its growth with `checked_mul` and lands the score with `checked_add`; `headroom` is capped by `MAX_SCORE` and `growth <= headroom`, so the failure arms state those preconditions and no error variant is added (#725)
+
 ## Issue #722: guard `preview_settlement`'s cumulative sum against overflow
 
 - [x] Route the `previous_refunded + amount` sum in `preview_settlement` through `add_amounts` (#722)

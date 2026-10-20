@@ -22,6 +22,18 @@ exception: while the project is below `1.0.0`, breaking changes bump the
 - **Internal tests (#655, #657):** Pinned the treasury vesting event shapes and the reputation SBT authority gate on `issue`, `revoke` and `slash`.
 - **Documentation (#756, #757, #761, #762):** Documented granular event payload fields and refund-vault APIs.
 
+- **`reputation` (issue #725): guard `record_completion`'s growth product and
+  sum against overflow.** `record_completion` now computes its growth with
+  `u128::checked_mul` and applies it with `u64::checked_add` instead of a bare
+  `*` and `+`, so neither line depends on the release profile's
+  `overflow-checks = true` trapping the host call. Both failure arms are
+  stated preconditions rather than a new error variant, since `CreditError` is
+  out of scope: `headroom` is capped by `MAX_SCORE` before the multiplication,
+  and `GROWTH_RATE_BPS` (2_500) sits under its 10_000 denominator, so `growth
+  <= headroom` and the sum never passes `MAX_SCORE`. New
+  `contracts/reputation/src/credit_score_completion_overflow_test.rs` drives
+  both operands to their reachable maximum through the public entry point and
+  asserts the exact returned score instead of a host abort.
 - test: assert the dispute, counter-evidence and claim event shapes (#895).
 - **`treasury` (issue #648): burn only buyback tokens actually delivered.**
   Buyback execution now measures the governance-token balance change around the
