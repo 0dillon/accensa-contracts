@@ -22,6 +22,15 @@ exception: while the project is below `1.0.0`, breaking changes bump the
 - **Internal tests (#655, #657):** Pinned the treasury vesting event shapes and the reputation SBT authority gate on `issue`, `revoke` and `slash`.
 - **Documentation (#756, #757, #761, #762):** Documented granular event payload fields and refund-vault APIs.
 
+- **`receipt-shard` / `upto-authorization` (issues #781, #793): rustdoc for
+  the undocumented public fields of `BatchRecord` and `AuthorizationRecord`.**
+  Each of the 5 fields of `BatchRecord` in `contracts/receipt-shard/src/lib.rs`
+  (`root`, `count`, `period_start`, `period_end`, `anchored_ledger`) and each
+  of the 5 named fields of `AuthorizationRecord` in
+  `contracts/upto-authorization/src/types.rs` (`from`, `to`, `cap`, `expiry`,
+  `consumed`) now carries a `///` stating the unit or domain of the value and
+  the code paths that write and read it. Doc comments only — no field, type,
+  order or derive change, and no behavior change.
 - **`state-channel` (issue #728): compute the HTLC reservation total with
   checked arithmetic.** `htlc::add` now combines `already_reserved` and the
   new hop's `amount` through `accensa_common::math::add_amounts`, so an
