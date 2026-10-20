@@ -330,8 +330,8 @@ exception: while the project is below `1.0.0`, breaking changes bump the
   equals the sum of the still-pending payments' amounts; that
   `HashlockPaymentCount` allocates distinct sequential ids that a resolve
   neither rewinds nor reuses; and that a reveal and a timed-out HTLC refund
-  each release exactly their own amount, with a double reveal rejected and
-  the reserve left at the pending sum. Test-only — no contract behavior
+  each release exactly their own amount, with a double reveal rejected and the
+  reserve left at the pending sum. Test-only — no contract behavior
   change.
 - security(multisig): implement 14-day TTL expiration for pending signatures and approvals (#449)
 - **`nft` (issue #453): Discount coupon NFTs for merchant stores.** New coupon
@@ -364,8 +364,8 @@ exception: while the project is below `1.0.0`, breaking changes bump the
   the floor, otherwise `Rejected`; a second verification of the same escrow
   fails with `Error::AlreadyVerified`. `Error` is crate-local on purpose, so
   growing it does not enlarge the WASM spec of the contracts that share
-  `accensa_common::Error`. The commitment is `sha256(value || blinding)` and the
-  verifier is structural rather than pairing-based, because Soroban exposes no
+  `accensa_common::Error`. The commitment is `sha256(value || blinding)` and
+  the verifier is structural rather than pairing-based, because Soroban exposes no
   curve arithmetic — both are documented in the module as stand-ins.
 - **`cross-chain` (issue #454): Axelar gateway deposit adapter.** New `axelar`
   module lets users on Ethereum, Polygon and other Axelar-chains fund Soroban
@@ -392,7 +392,7 @@ exception: while the project is below `1.0.0`, breaking changes bump the
   collateral withdrawal that leaves debt unbacked. Includes 16 tests
   covering accrual, liquidity, collateral, settlement, and the withdrawal
   safeguard.
-- **`receipt-shard` (issue #437): shard storage consolidation.** Router-authorized source shards can migrate exact `BatchRecord` values into a destination shard, verify the returned record before deletion, emit `ShardsConsolidated`, and mark drained sources inactive to stop further writes.
+- **`receipt-shard` (issue #437): shard storage consolidation.** Router-authorized source shards can migrate exact `BatchRecord` values into a destination shard, verify the returned record before [...]
 - **`state-channel` (issue #431): anti-sniping late counter-proof extension.** A
   valid counter-proof submitted within the final 50 ledgers of the dispute window
   now pushes the deadline back by 50 ledgers so the honest party has time to
