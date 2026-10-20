@@ -8,6 +8,17 @@ exception: while the project is below `1.0.0`, breaking changes bump the
 **minor** version, and they are called out as such.
 
 ## [Unreleased]
+- **`refund-policy-vdf` (issue #601): Tier A CPU ceilings for the VDF delay
+  proof path.** New `contracts/refund-policy-vdf/src/budget_test.rs` gates
+  `evaluate` at delay 0, 1 and `u32::MAX`, `generate_randomness`, and the
+  fallback dispute request/settle paths with `#[budget_cpu_lt]`, behind the
+  new `budget-assert` feature and optional `budget_macros` dependency. The
+  delay gates record the measured baselines; verification cost is flat in the
+  delay because the transcript-derived prime search dominates, and the
+  zero-delay no-gate path is gated separately and much tighter. Test-only —
+  the modulus, `MR_BASES`, delay types and contract behaviour are unchanged.
+- **Internal tests (#655, #657):** Pinned the treasury vesting event shapes and the reputation SBT authority gate on `issue`, `revoke` and `slash`.
+- **Documentation (#756, #757, #761, #762):** Documented granular event payload fields and refund-vault APIs.
 
 - test: assert the dispute, counter-evidence and claim event shapes (#895).
 - **`treasury` (issue #648): burn only buyback tokens actually delivered.**
