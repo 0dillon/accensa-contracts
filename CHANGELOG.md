@@ -25,6 +25,16 @@ exception: while the project is below `1.0.0`, breaking changes bump the
   - **`refund-vault-factory` (#591):** Added `initialize_alias` test module asserting proxy initialization matching constructor state, `AlreadyInitialized` protection on repeat calls, and non-admin authorization denial.
 
 - **Documentation (#750, #751):** Documented the 4 public items of refund-vault `nft_escrow` (`deposit`, `claim`, `refund`, `get`) and the 4 of state-channel `multi_asset` (`MultiAssetChannelOpenedEvent`, `MultiAssetSettledEvent`, `open`, `get`) with `///` rustdoc, covering role, pre-conditions and each `Error` arm for off-chain integrators; comments only, no code change.
+- **`state-channel` (issue #627): route the HTLC preimage check through the
+  constant-time comparator.** `contracts/state-channel/src/htlc.rs` now calls
+  `accensa_common::constant_time::constant_time_eq` for the hash-lock preimage
+  comparison, removing a byte-wise timing signal on secret-derived input. The
+  two other audited comparisons — guardian addresses in
+  `contracts/cross-chain/src/wormhole.rs` and Merkle roots in
+  `contracts/receipt-shard/src/lib.rs` — are public-data-only and now say so at
+  the call site. The comparator's unit tests cover equal, empty, first-byte and
+  last-byte differences and both length-mismatch directions. Accept/reject
+  decisions are unchanged.
 - **`cross-chain` (issue #618): pin the Axelar replay guard and credited balance
   keys by tests.** New `replay_guard_and_credited_keys` module in
   `contracts/cross-chain/src/axelar_test.rs` asserts that a duplicate message id
