@@ -8,23 +8,25 @@ exception: while the project is below `1.0.0`, breaking changes bump the
 **minor** version, and they are called out as such.
 
 ## [Unreleased]
-
-- **`treasury` (issue #648): burn only buyback tokens actually delivered.**
-  Buyback execution now measures the governance-token balance change around the
-  DEX swap, rejects delivery below the slippage floor or the router's reported
-  amount, and burns and reports only the amount received.
-- **`reputation` (issue #650): authority guard behavior pinned by tests.**
-  Tests cover calls before initialization, refusal when the stored admin is
-  unauthenticated, unchanged badge state after a refused call, and successful
-  calls by the initialized admin through reputation and credit-scoring entry
-  points. Test-only — no contract behavior change.
-- **`treasury`, `refund-vault`, `state-channel`, `upto-authorization`, `refund-vault-factory` (issues #588, #589, #590, #591): guards, proxy initialization alias tests, and Tier A budget assertions.**
-  - **`treasury` (#588):** Added validation tests for `add_schedule` verifying rejection of zero duration and cliff after duration, rejection of duplicate beneficiaries preserving existing schedules untouched, non-admin authorization denial, and round-trip verification with `ScheduleCreatedEvent` captured in test snapshots.
-  - **`refund-vault` (#589):** Added WASM-mode Tier A budget assertions pinning CPU ceilings for `claim_batch`, `deploy_to_yield`, and `extend_refund_ttl` with dated baseline measurements and 1.15x headroom.
-  - **`state-channel` & `upto-authorization` (#590):** Wired `budget-assert` feature and added Tier A budget suites for `mutual_close`/`close_channel` (with Ed25519 signatures) and `authorize`/`settle` at cap boundaries; enabled in CI workflow.
-  - **`refund-vault-factory` (#591):** Added `initialize_alias` test module asserting proxy initialization matching constructor state, `AlreadyInitialized` protection on repeat calls, and non-admin authorization denial.
-
+- **`refund-vault` (issue #703): dust and flash-loan guard pinned by tests.**
+  `dust_threshold` and `dust_treasury` are asserted — through direct
+  crate-internal calls and the public getters — to return the compiled default,
+  the exact configured values, and the full merchant → fee-recipient →
+  explicit-treasury fallback chain; the flash-loan reentrancy guard is asserted
+  to reject a nested acquire and a locked `flash_loan` with exactly
+  `ReentrancyBlocked` (releasing no lock, moving no funds) and to release the
+  lock after a fully repaid loan. Test-only — no contract behavior change.
 - **Documentation (#750, #751):** Documented the 4 public items of refund-vault `nft_escrow` (`deposit`, `claim`, `refund`, `get`) and the 4 of state-channel `multi_asset` (`MultiAssetChannelOpenedEvent`, `MultiAssetSettledEvent`, `open`, `get`) with `///` rustdoc, covering role, pre-conditions and each `Error` arm for off-chain integrators; comments only, no code change.
+- **`state-channel` (issue #627): route the HTLC preimage check through the
+  constant-time comparator.** `contracts/state-channel/src/htlc.rs` now calls
+  `accensa_common::constant_time::constant_time_eq` for the hash-lock preimage
+  comparison, removing a byte-wise timing signal on secret-derived input. The
+  two other audited comparisons — guardian addresses in
+  `contracts/cross-chain/src/wormhole.rs` and Merkle roots in
+  `contracts/receipt-shard/src/lib.rs` — are public-data-only and now say so at
+  the call site. The comparator's unit tests cover equal, empty, first-byte and
+  last-byte differences and both length-mismatch directions. Accept/reject
+  decisions are unchanged.
 - **`cross-chain` (issue #618): pin the Axelar replay guard and credited balance
   keys by tests.** New `replay_guard_and_credited_keys` module in
   `contracts/cross-chain/src/axelar_test.rs` asserts that a duplicate message id
@@ -50,6 +52,8 @@ exception: while the project is below `1.0.0`, breaking changes bump the
   rejected with `StrategyNotApproved` at both registration and deployment; and
   that re-approving is idempotent (one revoke clears it). Test-only — no
   contract behavior change.
+- **Documentation (#780):** Documented the public fields of receipt-shard `ShardStats`.
+- **Internal tests (#655, #657):** Pinned the treasury vesting event shapes and the reputation SBT authority gate on `issue`, `revoke` and `slash`.
 - **Internal tests (#651, #655, #657):** Pinned the treasury vesting event shapes and the reputation SBT authority gate on `issue`, `revoke` and `slash`, including rejection of non-authority callers without changing storage.
 - **Documentation (#756, #757, #761, #762):** Documented granular event payload fields and refund-vault APIs.
 - **Documentation (#788, #792):** Documented the five public fields of state-channel `MultiAssetChannel` (`sender`, `receiver`, `phase`, `opened_at`, `challenge_period`) and the five of upto-authorization `AuthorizeEvent` (`payment_id`, `from`, `to`, `cap`, `expiry`) for off-chain decoders; comments only, no code change.
@@ -165,6 +169,8 @@ exception: while the project is below `1.0.0`, breaking changes bump the
   Extended `contracts/refund-policy-vdf/src/test.rs` with coverage for `request_dispute`, `oracle_request_bytes`, and `settle_dispute`.
 - **`receipt-shard` (issue #700): unit tests for record_migration.**
   Extended `contracts/receipt-shard/src/pruning_test.rs` with coverage for `record_migration` and diagnostic metrics progression.
+- **`refund-policy-time` (issue #701): unit tests for check_time_gates.**
+  Extended `contracts/refund-policy-time/src/oracle_test.rs` with coverage for `check_time_gates` window and deadline gates.
 - **`receipt-shard` (issue #699): unit tests for decommission, record_anchor, and record_removals.**
   Extended `contracts/receipt-shard/src/consolidation_test.rs` with coverage for shard decommissioning and diagnostics counter updates.
 - **`stream-vault` / `multisig-account` (issues #752, #754): rustdoc coverage
@@ -1446,6 +1452,3 @@ the transactions that created them are recorded in
 [0.3.0]: https://github.com/accensa/accensa-contracts/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/accensa/accensa-contracts/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/accensa/accensa-contracts/releases/tag/v0.1.0
-
-## [Unreleased]
-- Fixed issues
