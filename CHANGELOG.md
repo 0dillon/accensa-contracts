@@ -9,6 +9,10 @@ exception: while the project is below `1.0.0`, breaking changes bump the
 
 ## [Unreleased]
 
+- **`treasury` (issue #648): burn only buyback tokens actually delivered.**
+  Buyback execution now measures the governance-token balance change around the
+  DEX swap, rejects delivery below the slippage floor or the router's reported
+  amount, and burns and reports only the amount received.
 - **`reputation` (issue #650): authority guard behavior pinned by tests.**
   Tests cover calls before initialization, refusal when the stored admin is
   unauthenticated, unchanged badge state after a refused call, and successful
