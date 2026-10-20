@@ -8,6 +8,8 @@ exception: while the project is below `1.0.0`, breaking changes bump the
 **minor** version, and they are called out as such.
 
 ## [Unreleased]
+- **`treasury` (issue #606): assert buyback and fee-liquidation events and their config key.**
+  Field-by-field XDR shape assertions for `BuybackConfiguredEvent`, `BuybackExecutedEvent`, and `FeesLiquidatedEvent`, including AMM round-trip reconfiguration tests and no-event checks for rejected swaps. Test-only — no contract behavior change.
 - **`refund-policy-vdf` (issue #601): Tier A CPU ceilings for the VDF delay
   proof path.** New `contracts/refund-policy-vdf/src/budget_test.rs` gates
   `evaluate` at delay 0, 1 and `u32::MAX`, `generate_randomness`, and the
