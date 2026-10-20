@@ -22,6 +22,35 @@ exception: while the project is below `1.0.0`, breaking changes bump the
 - **Internal tests (#655, #657):** Pinned the treasury vesting event shapes and the reputation SBT authority gate on `issue`, `revoke` and `slash`.
 - **Documentation (#756, #757, #761, #762):** Documented granular event payload fields and refund-vault APIs.
 
+- **`state-channel` (issue #728): compute the HTLC reservation total with
+  checked arithmetic.** `htlc::add` now combines `already_reserved` and the
+  new hop's `amount` through `accensa_common::math::add_amounts`, so an
+  out-of-range sum surfaces `Error::MathOverflow` instead of relying on the
+  release profile's overflow trap. The escrow ceiling check immediately above
+  keeps every reachable sum in range; the new
+  `contracts/state-channel/src/htlc_overflow_test.rs` drives the reservation
+  total to exactly `i128::MAX` and pins the typed rejection one stroop past it.
+- **`receipt-anchor` (issue #744): rustdoc for `lib.rs`'s 6 undocumented
+  public items.** `contracts/receipt-anchor/src/lib.rs` now documents
+  `DataKey`, `ReceiptAnchor`, `initialize` (its no-auth, once-only pre-condition
+  plus the `Error::AlreadyInitialized` arm), `get_batch` and `verify_receipt`
+  (the `BatchNotFound` / `ProofTooLong` / `ShardCallFailed` arms) and the
+  read-only `get_shard_capacity`. Doc comments only — no signature, body,
+  ordering or test change, and `missing_docs` is deliberately not enabled.
+- **`common` (issue #745): rustdoc for the reentrancy module's 4 exported
+  names.** `contracts/common/src/reentrancy.rs` now documents
+  `ReentrancyDataKey`, `ReentrancyGuard`, `acquire` (pre-condition plus the
+  `Error::ReentrancyBlocked` arm) and `release`. Doc comments only — no
+  signature, body, ordering or test change.
+- **`receipt-shard` (issue #679): `prune_batches` returns a typed error
+  instead of trapping.** `prune_batches` now returns `Result<(u64, u64),
+  Error>`; its three construction-time instance reads (`Router`, `EndBatchId`,
+  `PrunedUpTo`) answer `Error::NotInitialized` when the key is absent — before
+  the shard is constructed, or after the instance entry has aged out — instead
+  of aborting the host call through `.unwrap()`. The success return type is
+  unchanged, so existing callers and the router's `ShardInterface` trait keep
+  their wire shape. New `contracts/receipt-shard/tests/prune_before_init.rs`
+  pins the typed error on all three read sites before initialisation.
 - **`reputation` (issue #726): guard `record_fraud`'s penalty product against
   overflow.** `record_fraud` now computes its basis-point penalty with
   `u128::checked_mul` instead of a bare `*`, so it no longer relies on the
