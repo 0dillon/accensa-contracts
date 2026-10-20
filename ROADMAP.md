@@ -1,5 +1,10 @@
 # Roadmap
 
+## Issue #780: rustdoc for ShardStats's 5 exported fields
+
+- [x] Document the struct's 5 public fields (#780)
+  - `contracts/receipt-shard/src/diagnostics.rs` — doc comments only, field/type/order/derives unchanged
+
 ## Issue #708: refund-vault coupon and liquidity test coverage
 
 - [x] Add refund-vault coupon and liquidity test coverage (#708)
